@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# Virtual Environment
+.venv/
+venv/
+env/
+
+# Logs / processes
+*.log
+logs/
+uvicorn.log
+*.pid
+
+# Build / distribution
+dist/
+build/
+*.egg-info/
+
+# Editors / IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+__pycache__/
+
+# Secrets / config (never commit)
+.env
+.env.local
+.env.*
+*.env.*
+*.pem
+*.key
+*.crt
+secrets/
+secrets.py
