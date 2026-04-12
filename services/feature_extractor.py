@@ -24,7 +24,7 @@ from PIL import Image
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────────────────────────────────────
-# HSV colour-range helpers
+# HSV colour-range helpers ( Hue, Saturation & Value)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _hsv_ratio(hsv_img: np.ndarray, lower: list, upper: list) -> float:

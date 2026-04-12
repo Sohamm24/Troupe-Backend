@@ -23,7 +23,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import feed, match
+from routers import feed, match, webhook, posts
+from database import engine
+import models
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging
@@ -95,6 +97,13 @@ async def lifespan(app: FastAPI):
     app.state.metadata_index = []
     app.state.image_matcher  = None
 
+    # Initialise DB tables manually for MVP (in prod use Alembic)
+    try:
+        models.Base.metadata.create_all(bind=engine)
+        logger.info("✓ Database tables created/verified")
+    except Exception as e:
+        logger.error(f"Database error on startup: {e}")
+
     # Kick off build in background thread
     t = threading.Thread(target=_build_pipeline, args=(app,), daemon=True)
     t.start()
@@ -135,6 +144,8 @@ else:
 # ── Routes ────────────────────────────────────────────────────────────────────
 app.include_router(feed.router)
 app.include_router(match.router)
+app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
+app.include_router(webhook.router, prefix="/api/webhook", tags=["webhooks"])
 
 
 @app.get("/health", tags=["health"])
