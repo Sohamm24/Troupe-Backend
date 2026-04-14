@@ -38,7 +38,7 @@ MAX_SIZE_MB   = 10
 
 
 @router.post("")
-async def match_image(
+def match_image(
     request: Request,
     file: UploadFile = File(..., description="Travel photo to find matches for"),
     top_n: int = Query(10, ge=1, le=30, description="Number of matches to return"),
@@ -57,7 +57,7 @@ async def match_image(
         )
 
     # ── Read bytes (size guard) ──────────────────────────────────────────────
-    raw = await file.read()
+    raw = file.file.read()
     size_mb = len(raw) / (1024 * 1024)
     if size_mb > MAX_SIZE_MB:
         raise HTTPException(

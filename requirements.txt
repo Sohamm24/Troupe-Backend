@@ -1,5 +1,4 @@
-# Travel Pinterest Backend — MVP
-# No DB / No auth
+# Travel Pinterest Backend
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 opencv-python==4.8.1.78
@@ -8,3 +7,8 @@ numpy
 scikit-learn
 python-multipart==0.0.6
 aiofiles==23.2.1
+httpx
+sqlalchemy
+psycopg2-binary
+pydantic[email]>=2.0
+python-dotenv

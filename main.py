@@ -23,7 +23,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from routers import feed, match, webhook, posts
+from routers import feed, match, webhook, posts, user
 from database import engine
 import models
 
@@ -142,9 +142,10 @@ else:
     logger.warning(f"images/ directory not found at {IMAGES_DIR}")
 
 # ── Routes ────────────────────────────────────────────────────────────────────
-app.include_router(feed.router)
+app.include_router(feed.router, prefix="/api/feed", tags=["feed"])
 app.include_router(match.router)
 app.include_router(posts.router, prefix="/api/posts", tags=["posts"])
+app.include_router(user.router,  prefix="/api/user",  tags=["user"])
 app.include_router(webhook.router, prefix="/api/webhook", tags=["webhooks"])
 
 
