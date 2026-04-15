@@ -20,6 +20,7 @@ from typing import Optional
 
 from database import get_db
 from models import Post, User
+from services.visual_search import extract_hsv_histogram, compute_similarity
 from schemas import PostResponse
 
 router = APIRouter()
@@ -202,9 +203,16 @@ def create_post(
         unique_name   = f"{uuid.uuid4()}.{file_ext}"
         image_url     = upload_to_supabase(file_bytes, unique_name, image.content_type or "image/jpeg")
 
-        # ── Generate tags via OpenCV ──────────────────────────────────────────
+        # ── Generate tags & histogram via OpenCV ──────────────────────────────
         tags = generate_tags_from_image(file_bytes)
-        logger.info(f"Generated tags for post: {tags}")
+        
+        # ── Visual Similarity Features ────────────────────────────────────────
+        try:
+            image_features = extract_hsv_histogram(file_bytes)
+            logger.info("Successfully extracted HSV histogram for similarity search")
+        except Exception as ve:
+            logger.warning(f"Failed to extract HSV histogram: {ve}")
+            image_features = None
 
         # ── Validate & parse location JSON ────────────────────────────────────
         location_json: Optional[str] = None
@@ -224,15 +232,16 @@ def create_post(
 
         # ── Persist to database ───────────────────────────────────────────────
         new_post = Post(
-            user_id     = current_user.id,
-            description = description,
-            image_url   = image_url,
-            location    = location_json,
-            tags        = tags,
-            trip_start  = tripStartDate,
-            trip_end    = tripEndDate,
-            likes       = 0,
-            saves       = 0,
+            user_id         = current_user.id,
+            description     = description,
+            image_url       = image_url,
+            location        = location_json,
+            tags            = tags,
+            trip_start      = tripStartDate,
+            trip_end        = tripEndDate,
+            image_features  = image_features,
+            likes           = 0,
+            saves           = 0,
         )
         db.add(new_post)
         db.commit()
@@ -261,3 +270,62 @@ def get_user_posts(
         .order_by(Post.created_at.desc())
         .all()
     )
+
+
+# ── GET /api/posts/{post_id}/similar ──────────────────────────────────────────
+
+@router.get("/{post_id}/similar", response_model=list[PostResponse])
+def get_similar_posts(
+    post_id: int,
+    limit: int = 8,
+    db: Session = Depends(get_db),
+) -> list[PostResponse]:
+    """
+    Find posts visually similar to the target post using HSV histogram comparison.
+    
+    Logic:
+    1. Fetch the target post by post_id.
+    2. Retrieve its 'hsv_histogram' from 'image_features'.
+    3. Fetch the last 200 posts from the database (as a candidate set).
+    4. Compute similarity score for each candidate.
+    5. Sort by score descending and return the top results.
+    """
+    # 1. Target Post
+    target_post = db.query(Post).filter(Post.id == post_id).first()
+    if not target_post:
+        raise HTTPException(status_code=404, detail="Post not found")
+        
+    if not target_post.image_features or "hsv_histogram" not in target_post.image_features:
+        # If target has no histogram, just return recent posts as fallback
+        return db.query(Post).filter(Post.id != post_id).order_by(Post.created_at.desc()).limit(limit).all()
+
+    target_hist = target_post.image_features["hsv_histogram"]
+
+    # 3. Candidate Set (Last 200 posts to keep it fast)
+    candidates = (
+        db.query(Post)
+        .filter(Post.id != post_id)
+        .filter(Post.image_features.has_key("hsv_histogram"))
+        .order_by(Post.created_at.desc())
+        .limit(200)
+        .all()
+    )
+
+    # 4. Compute Similarity
+    scored_candidates = []
+    for candidate in candidates:
+        cand_hist = candidate.image_features["hsv_histogram"]
+        try:
+            score = compute_similarity(target_hist, cand_hist)
+            scored_candidates.append((candidate, score))
+        except Exception as e:
+            logger.warning(f"Error comparing histogram for post {candidate.id}: {e}")
+            continue
+
+    # 5. Sort and Return Top N
+    # Sort by score (index 1) in descending order
+    scored_candidates.sort(key=lambda x: x[1], reverse=True)
+    
+    top_posts = [p[0] for p in scored_candidates[:limit]]
+    
+    return top_posts

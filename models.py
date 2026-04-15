@@ -53,6 +53,10 @@ class Post(Base):
     trip_start  = Column(String, nullable=True)
     trip_end    = Column(String, nullable=True)
 
+    # Visual features for similarity search
+    # Structure: {"hsv_histogram": [float, float, ...]}
+    image_features = Column(JSONB, nullable=True)
+
     created_at  = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="posts")

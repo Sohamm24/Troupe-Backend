@@ -4,10 +4,20 @@ schemas.py
 Pydantic v2 models for Travel Pinterest.
 """
 
+from typing import TypedDict
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from datetime import datetime, date
 
+class ImageFeatures(TypedDict):
+    # Core feature for visual similarity search
+    hsv_histogram: List[float]
+    
+    # Metadata for content tagging (legacy/extra)
+    dominant_colors: Optional[List[List[float]]]
+    color_percentages: Optional[List[float]]
+    avg_hsv: Optional[List[float]]
+    # ... other fields could be added here if needed for legacy compatibility
 
 # ── Location ───────────────────────────────────────────────────────────────────
 

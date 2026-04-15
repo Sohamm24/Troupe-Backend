@@ -81,14 +81,18 @@ def migrate_v2_posts(conn) -> None:
     # Backfill image_url for rows that have image_urls but no image_url yet.
     # Takes the first element of the old array so existing posts remain visible.
     conn.execute(text("""
-        UPDATE posts
-        SET    image_url = image_urls[1]
-        WHERE  image_url IS NULL
-          AND  image_urls IS NOT NULL
-          AND  array_length(image_urls, 1) > 0;
+        DO $$
+        BEGIN
+            IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='posts' AND column_name='image_urls') THEN
+                UPDATE posts
+                SET    image_url = image_urls[1]
+                WHERE  image_url IS NULL
+                  AND  image_urls IS NOT NULL
+                  AND  array_length(image_urls, 1) > 0;
+            END IF;
+        END $$;
     """))
-
-    print("  [v2] posts table — OK  (image_url backfilled from image_urls[1] where possible)")
+    print("  [v2] posts table — OK")
 
 
 def migrate_v3_cleanup(conn) -> None:
@@ -135,12 +139,22 @@ def migrate_v3_cleanup(conn) -> None:
     print("  [v3] renames & JSONB conversion — OK")
 
 
+def migrate_v4_visual_search(conn) -> None:
+    """v4: Add image_features JSONB to posts for visual similarity search."""
+    conn.execute(text("""
+        ALTER TABLE posts 
+        ADD COLUMN IF NOT EXISTS image_features JSONB;
+    """))
+    print("  [v4] image_features column — OK")
+
+
 def migrate() -> None:
     print("Running database migrations…")
     with engine.begin() as conn:          # auto-commits on success, rolls back on error
         migrate_v1_users(conn)
         migrate_v2_posts(conn)
         migrate_v3_cleanup(conn)
+        migrate_v4_visual_search(conn)
     print("[DONE] All migrations applied successfully.")
 
 
