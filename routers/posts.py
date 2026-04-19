@@ -206,6 +206,9 @@ def get_similar_posts(
         )
 
     from sqlalchemy import text
+    # pgvector requires "[v1,v2,...,vn]" — comma-separated, no scientific notation.
+    # str(target_post.embedding) gives numpy-style "[ 1.2e-02  3.4e-02 ...]" which is rejected.
+    emb_str = "[" + ",".join(f"{v:.8f}" for v in target_post.embedding) + "]"
     results = db.execute(
         text("""
             SELECT id
@@ -215,8 +218,9 @@ def get_similar_posts(
             ORDER BY embedding <=> CAST(:emb AS vector)
             LIMIT :limit
         """),
-        {"post_id": post_id, "emb": str(target_post.embedding), "limit": limit}
+        {"post_id": post_id, "emb": emb_str, "limit": limit}
     ).fetchall()
+
 
     ids = [r[0] for r in results]
     if not ids:
