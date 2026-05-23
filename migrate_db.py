@@ -148,6 +148,54 @@ def migrate_v4_visual_search(conn) -> None:
     print("  [v4] image_features column — OK")
 
 
+def migrate_v5_social_and_media(conn) -> None:
+    """v5: Add tables for likes/saves, and new columns for multiple images & trip days."""
+    
+    # 1. posts table changes
+    stmts = [
+        # Make image_url optional for new posts
+        "ALTER TABLE posts ALTER COLUMN image_url DROP NOT NULL;",
+        # Add media_urls as JSONB
+        "ALTER TABLE posts ADD COLUMN IF NOT EXISTS media_urls JSONB DEFAULT '[]'::JSONB;",
+        # Add trip_days
+        "ALTER TABLE posts ADD COLUMN IF NOT EXISTS trip_days INTEGER;"
+    ]
+    for stmt in stmts:
+        conn.execute(text(stmt))
+
+    # 2. Backfill media_urls with image_url if empty
+    conn.execute(text("""
+        UPDATE posts 
+        SET media_urls = jsonb_build_array(image_url) 
+        WHERE image_url IS NOT NULL 
+          AND (media_urls IS NULL OR jsonb_array_length(media_urls) = 0);
+    """))
+
+    # 3. Create post_likes table
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS post_likes (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_post_like_user_post UNIQUE (user_id, post_id)
+        );
+    """))
+
+    # 4. Create post_saves table
+    conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS post_saves (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            post_id INTEGER NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+            CONSTRAINT uq_post_save_user_post UNIQUE (user_id, post_id)
+        );
+    """))
+
+    print("  [v5] social tables & media columns — OK")
+
+
 def migrate() -> None:
     print("Running database migrations…")
     with engine.begin() as conn:          # auto-commits on success, rolls back on error
@@ -155,6 +203,7 @@ def migrate() -> None:
         migrate_v2_posts(conn)
         migrate_v3_cleanup(conn)
         migrate_v4_visual_search(conn)
+        migrate_v5_social_and_media(conn)
     print("[DONE] All migrations applied successfully.")
 
 

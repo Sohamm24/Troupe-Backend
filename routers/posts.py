@@ -22,7 +22,7 @@ from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 
 from database import get_db
-from models import Post, User
+from models import Post, User, PostLike, PostSave
 from schemas import PostResponse, PostUpdateRequest
 from services.embedding import get_image_embedding
 
@@ -97,29 +97,34 @@ def _get_post_with_owner(post_id: int, db: Session) -> Post:
 @router.post("/", response_model=PostResponse)
 async def create_post(
     description:    Optional[str]  = Form(None),
-    tripStartDate:  str            = Form(...),
-    tripEndDate:    str            = Form(...),
+    tripDays:       int            = Form(...),
     location:       Optional[str]  = Form(None),    # JSON string
-    image: UploadFile              = File(...),
+    images:         list[UploadFile] = File(...),
     current_user: User             = Depends(get_current_user),
     db: Session                    = Depends(get_db),
 ) -> PostResponse:
     """
     Create a new travel post.
-    Accepts multipart/form-data with a single image field named 'image'.
+    Accepts multipart/form-data with multiple image fields named 'images'.
     """
     try:
-        file_bytes    = image.file.read()
-        file_ext      = (image.filename or "photo.jpg").rsplit(".", 1)[-1]
-        unique_name   = f"{uuid.uuid4()}.{file_ext}"
-        image_url     = upload_to_supabase(file_bytes, unique_name, image.content_type or "image/jpeg")
-
-        try:
-            loop = asyncio.get_running_loop()
-            embedding = await loop.run_in_executor(None, get_image_embedding, file_bytes)
-        except Exception as emb_err:
-            logger.warning(f"Embedding failed, storing null: {emb_err}")
-            embedding = None
+        media_urls = []
+        embedding = None
+        
+        for idx, image in enumerate(images):
+            file_bytes    = image.file.read()
+            file_ext      = (image.filename or "photo.jpg").rsplit(".", 1)[-1]
+            unique_name   = f"{uuid.uuid4()}.{file_ext}"
+            image_url     = upload_to_supabase(file_bytes, unique_name, image.content_type or "image/jpeg")
+            media_urls.append(image_url)
+            
+            # Generate embedding for the very first image only
+            if idx == 0:
+                try:
+                    loop = asyncio.get_running_loop()
+                    embedding = await loop.run_in_executor(None, get_image_embedding, file_bytes)
+                except Exception as emb_err:
+                    logger.warning(f"Embedding failed, storing null: {emb_err}")
 
         location_data: Optional[dict] = None
         if location:
@@ -136,10 +141,10 @@ async def create_post(
         new_post = Post(
             user_id     = current_user.id,
             description = description,
-            image_url   = image_url,
+            image_url   = media_urls[0] if media_urls else None, # Legacy
+            media_urls  = media_urls,
             location    = location_data,
-            trip_start  = tripStartDate,
-            trip_end    = tripEndDate,
+            trip_days   = tripDays,
             embedding   = embedding,
             likes       = 0,
             saves       = 0,
@@ -233,8 +238,57 @@ def delete_post(
 
     db.delete(post)
     db.commit()
-    return None
+    return {"detail": "Post deleted"}
 
+# ── Likes & Saves ──────────────────────────────────────────────────────────────
+
+@router.post("/{post_id}/like")
+def like_post(post_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post: raise HTTPException(404, "Post not found")
+    
+    like = db.query(PostLike).filter_by(user_id=current_user.id, post_id=post_id).first()
+    if not like:
+        db.add(PostLike(user_id=current_user.id, post_id=post_id))
+        post.likes += 1
+        db.commit()
+    return {"detail": "Liked"}
+
+@router.delete("/{post_id}/like")
+def unlike_post(post_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post: raise HTTPException(404, "Post not found")
+    
+    like = db.query(PostLike).filter_by(user_id=current_user.id, post_id=post_id).first()
+    if like:
+        db.delete(like)
+        post.likes = max(0, post.likes - 1)
+        db.commit()
+    return {"detail": "Unliked"}
+
+@router.post("/{post_id}/save")
+def save_post(post_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post: raise HTTPException(404, "Post not found")
+    
+    save = db.query(PostSave).filter_by(user_id=current_user.id, post_id=post_id).first()
+    if not save:
+        db.add(PostSave(user_id=current_user.id, post_id=post_id))
+        post.saves += 1
+        db.commit()
+    return {"detail": "Saved"}
+
+@router.delete("/{post_id}/save")
+def unsave_post(post_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post: raise HTTPException(404, "Post not found")
+    
+    save = db.query(PostSave).filter_by(user_id=current_user.id, post_id=post_id).first()
+    if save:
+        db.delete(save)
+        post.saves = max(0, post.saves - 1)
+        db.commit()
+    return {"detail": "Unsaved"}
 
 # ── GET /api/posts/{post_id}/similar ──────────────────────────────────────────
 

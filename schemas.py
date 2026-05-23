@@ -49,12 +49,16 @@ class PostResponse(BaseModel):
     owner:       Optional[UserBasic] = None
     description: Optional[str]      = None
     location:    Optional[LocationModel] = None
-    image_url:   str
+    image_url:   Optional[str] = None
+    media_urls:  Optional[List[str]] = []
     tags:        Optional[List[str]] = []
     likes:       int = 0
     saves:       int = 0
-    trip_start:  Optional[str] = None   # YYYY-MM-DD
-    trip_end:    Optional[str] = None   # YYYY-MM-DD
+    trip_start:  Optional[str] = None   # Legacy
+    trip_end:    Optional[str] = None   # Legacy
+    trip_days:   Optional[int] = None
+    has_liked:   Optional[bool] = False
+    has_saved:   Optional[bool] = False
     created_at:  Optional[datetime] = None
 
     @field_validator("location", mode="before")
@@ -74,8 +78,9 @@ class PostUpdateRequest(BaseModel):
     """Payload for PATCH /api/posts/{id} — all fields optional."""
     description: Optional[str]          = None
     location:    Optional[LocationModel] = None
-    trip_start:  Optional[str]          = None   # YYYY-MM-DD
-    trip_end:    Optional[str]          = None   # YYYY-MM-DD
+    trip_start:  Optional[str]          = None   # Legacy
+    trip_end:    Optional[str]          = None   # Legacy
+    trip_days:   Optional[int]          = None
 
 
 # ── User schemas ───────────────────────────────────────────────────────────────
@@ -90,6 +95,8 @@ class User(BaseModel):
     onboarded:       bool          = False
     created_at:      Optional[datetime] = None
     posts:           List[PostResponse] = []
+    liked_post_ids:  List[int] = []
+    saved_post_ids:  List[int] = []
 
     model_config = {"from_attributes": True}
 

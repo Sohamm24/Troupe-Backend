@@ -40,7 +40,11 @@ def _load_user_with_posts(user_id: int, db: Session) -> User:
     """Load user with eagerly fetched posts (newest first), each post with owner join."""
     user = (
         db.query(User)
-        .options(joinedload(User.posts).joinedload(Post.owner))
+        .options(
+            joinedload(User.posts).joinedload(Post.owner),
+            joinedload(User.post_likes),
+            joinedload(User.post_saves)
+        )
         .filter(User.id == user_id)
         .first()
     )
