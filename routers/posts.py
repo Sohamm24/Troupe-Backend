@@ -110,21 +110,35 @@ async def create_post(
     try:
         media_urls = []
         embedding = None
-        
-        for idx, image in enumerate(images):
-            file_bytes    = image.file.read()
-            file_ext      = (image.filename or "photo.jpg").rsplit(".", 1)[-1]
-            unique_name   = f"{uuid.uuid4()}.{file_ext}"
-            image_url     = upload_to_supabase(file_bytes, unique_name, image.content_type or "image/jpeg")
-            media_urls.append(image_url)
+        async def process_image(idx: int, image: UploadFile):
+            file_bytes = await image.read()
+            file_ext = (image.filename or f"photo_{idx}.jpg").rsplit(".", 1)[-1]
+            unique_name = f"{uuid.uuid4()}.{file_ext}"
             
-            # Generate embedding for the very first image only
+            # Run the synchronous upload in a thread pool to avoid blocking the event loop
+            loop = asyncio.get_running_loop()
+            image_url = await loop.run_in_executor(
+                None, 
+                upload_to_supabase, 
+                file_bytes, 
+                unique_name, 
+                image.content_type or "image/jpeg"
+            )
+            
+            # For the first image, also get the embedding
+            emb = None
             if idx == 0:
                 try:
-                    loop = asyncio.get_running_loop()
-                    embedding = await loop.run_in_executor(None, get_image_embedding, file_bytes)
+                    emb = await loop.run_in_executor(None, get_image_embedding, file_bytes)
                 except Exception as emb_err:
                     logger.warning(f"Embedding failed, storing null: {emb_err}")
+                    
+            return image_url, emb
+
+        results = await asyncio.gather(*(process_image(i, img) for i, img in enumerate(images)))
+        
+        media_urls = [res[0] for res in results]
+        embedding = results[0][1] if results else None
 
         location_data: Optional[dict] = None
         if location:
