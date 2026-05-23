@@ -49,8 +49,8 @@ class User(Base):
     created_at  = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     posts = relationship("Post", back_populates="owner")
-    post_likes = relationship("PostLike", backref="user", cascade="all, delete-orphan")
-    post_saves = relationship("PostSave", backref="user", cascade="all, delete-orphan")
+    post_likes = relationship("PostLike", cascade="all, delete-orphan")
+    post_saves = relationship("PostSave", cascade="all, delete-orphan")
 
     @property
     def liked_post_ids(self):
@@ -97,5 +97,5 @@ class Post(Base):
     created_at  = Column(TIMESTAMP(timezone=True), server_default=func.now())
 
     owner = relationship("User", back_populates="posts")
-    post_likes = relationship("PostLike", backref="post", cascade="all, delete-orphan")
-    post_saves = relationship("PostSave", backref="post", cascade="all, delete-orphan")
+    likes_rel  = relationship("PostLike", cascade="all, delete-orphan")
+    saves_rel  = relationship("PostSave", cascade="all, delete-orphan")

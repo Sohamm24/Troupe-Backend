@@ -179,6 +179,24 @@ def get_user_posts(
     )
 
 
+# ── GET /api/posts/saved ────────────────────────────────────────────────────────
+
+@router.get("/saved", response_model=list[PostResponse])
+def get_saved_posts(
+    current_user: User = Depends(get_current_user),
+    db: Session        = Depends(get_db),
+) -> list[PostResponse]:
+    """Return all posts saved by the currently authenticated user."""
+    return (
+        db.query(Post)
+        .join(PostSave)
+        .options(joinedload(Post.owner))
+        .filter(PostSave.user_id == current_user.id)
+        .order_by(PostSave.created_at.desc())
+        .all()
+    )
+
+
 # ── PATCH /api/posts/{post_id} ────────────────────────────────────────────────
 
 @router.patch("/{post_id}", response_model=PostResponse)
@@ -212,6 +230,9 @@ def update_post(
 
     if payload.trip_end is not None:
         post.trip_end = payload.trip_end
+
+    if payload.trip_days is not None:
+        post.trip_days = payload.trip_days
 
     db.commit()
     db.refresh(post)
