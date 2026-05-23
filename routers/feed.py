@@ -22,7 +22,7 @@ from datetime import date, datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import Post, User
@@ -160,9 +160,10 @@ def get_feed(
     logger.info(f"==> Feed Request | User ID: {current_user.id} (@{getattr(current_user, 'username', 'N/A')}) | Limit: {limit} | Offset: {offset}")
     today = date.today()
 
-    # Step 1 — Fetch up to 200 recent posts
+    # Step 1 — Fetch up to 200 recent posts (with owner join)
     recent_posts: list[Post] = (
         db.query(Post)
+        .options(joinedload(Post.owner))
         .order_by(Post.created_at.desc())
         .limit(200)
         .all()

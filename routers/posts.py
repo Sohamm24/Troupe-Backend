@@ -1,10 +1,12 @@
 """
 routers/posts.py
 -----------------
-POST /api/posts/           — Create a new travel post (multipart/form-data)
-GET  /api/posts/user       — Get all posts for the current authenticated user
-GET  /api/posts/{id}/similar — Find visually similar posts via pgvector cosine search
-POST /api/posts/{id}/embed   — Backfill SigLIP2 embedding for an existing post
+POST   /api/posts/                — Create a new travel post
+GET    /api/posts/user            — Get all posts for the current user (with owner join)
+PATCH  /api/posts/{id}            — Edit a post's text fields (owner only)
+DELETE /api/posts/{id}            — Delete a post (owner only)
+GET    /api/posts/{id}/similar    — Visually similar posts via pgvector cosine search
+POST   /api/posts/{id}/embed      — Backfill SigLIP2 embedding for an existing post
 """
 
 import json
@@ -14,15 +16,14 @@ import os
 import asyncio
 
 import httpx
-import numpy as np
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import Optional
 
 from database import get_db
 from models import Post, User
-from schemas import PostResponse
+from schemas import PostResponse, PostUpdateRequest
 from services.embedding import get_image_embedding
 
 router = APIRouter()
@@ -42,7 +43,7 @@ def get_current_user(
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing authorization header")
     external_id = authorization.replace("Bearer ", "").strip()
-    user = db.query(User).filter(User.external_id== external_id).first()
+    user = db.query(User).filter(User.external_id == external_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
@@ -53,9 +54,6 @@ def get_current_user(
 def upload_to_supabase(file_bytes: bytes, filename: str, content_type: str) -> str:
     """
     Upload image bytes to Supabase Storage and return the public URL.
-
-    NOTE: Replace this function body with your own cloud upload logic
-    (e.g. Cloudinary, S3, Firebase) if you switch storage providers.
     """
     supabase_url = os.getenv("SUPABASE_URL")
     supabase_key = os.getenv("SUPABASE_KEY")
@@ -80,40 +78,42 @@ def upload_to_supabase(file_bytes: bytes, filename: str, content_type: str) -> s
     return f"{supabase_url}/storage/v1/object/public/{bucket_name}/{filename}"
 
 
+# ── Helper: load post with owner joined ───────────────────────────────────────
+
+def _get_post_with_owner(post_id: int, db: Session) -> Post:
+    post = (
+        db.query(Post)
+        .options(joinedload(Post.owner))
+        .filter(Post.id == post_id)
+        .first()
+    )
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    return post
+
+
 # ── POST /api/posts/ ───────────────────────────────────────────────────────────
 
 @router.post("/", response_model=PostResponse)
 async def create_post(
-    # Multipart form fields
     description:    Optional[str]  = Form(None),
     tripStartDate:  str            = Form(...),
     tripEndDate:    str            = Form(...),
     location:       Optional[str]  = Form(None),    # JSON string
-    # Single image file
     image: UploadFile              = File(...),
-    # Dependencies
     current_user: User             = Depends(get_current_user),
     db: Session                    = Depends(get_db),
 ) -> PostResponse:
     """
     Create a new travel post.
-
-    - Accepts multipart/form-data with a single image field named 'image'.
-    - Uploads the image to Supabase Storage and obtains a public URL.
-    - Parses the location JSON string into a structured object.
-    - Generates a CLIP-ViT embedding (locally, CPU) for visual similarity search.
-    - Persists the post to the database and returns the full response model.
+    Accepts multipart/form-data with a single image field named 'image'.
     """
     try:
-        # ── Read image bytes ──────────────────────────────────────────────────
-        file_bytes = image.file.read()
-
-        # ── Upload image ─────────────────────────────────────────────────────
+        file_bytes    = image.file.read()
         file_ext      = (image.filename or "photo.jpg").rsplit(".", 1)[-1]
         unique_name   = f"{uuid.uuid4()}.{file_ext}"
         image_url     = upload_to_supabase(file_bytes, unique_name, image.content_type or "image/jpeg")
 
-        # ── CLIP embedding (local model, CPU-bound → thread executor) ─────────
         try:
             loop = asyncio.get_running_loop()
             embedding = await loop.run_in_executor(None, get_image_embedding, file_bytes)
@@ -121,41 +121,36 @@ async def create_post(
             logger.warning(f"Embedding failed, storing null: {emb_err}")
             embedding = None
 
-        # ── Validate & parse location JSON ────────────────────────────────────
-        location_json: Optional[str] = None
+        location_data: Optional[dict] = None
         if location:
             try:
                 parsed_loc = json.loads(location)
-                # Normalise to ensure it has the expected keys
-                location_json = json.dumps({
+                location_data = {
                     "name": parsed_loc.get("name", ""),
                     "lat":  float(parsed_loc.get("lat", 0)),
                     "lng":  float(parsed_loc.get("lng", 0)),
-                })
+                }
             except (json.JSONDecodeError, TypeError):
                 logger.warning(f"Invalid location JSON received: {location!r}")
-                # Store the raw string as fallback — don't reject the request
-                location_json = location
 
-        # ── Persist to database ───────────────────────────────────────────────
         new_post = Post(
-            user_id         = current_user.id,
-            description     = description,
-            image_url       = image_url,
-            location        = location_json,
-            trip_start      = tripStartDate,
-            trip_end        = tripEndDate,
-            embedding       = embedding,
-            likes           = 0,
-            saves           = 0,
+            user_id     = current_user.id,
+            description = description,
+            image_url   = image_url,
+            location    = location_data,
+            trip_start  = tripStartDate,
+            trip_end    = tripEndDate,
+            embedding   = embedding,
+            likes       = 0,
+            saves       = 0,
         )
         db.add(new_post)
         db.commit()
         db.refresh(new_post)
-        return new_post
+        return _get_post_with_owner(new_post.id, db)
 
     except HTTPException:
-        raise   # re-raise known HTTP errors as-is
+        raise
     except Exception as e:
         logger.error(f"Error creating post: {e}", exc_info=True)
         db.rollback()
@@ -169,13 +164,76 @@ def get_user_posts(
     current_user: User = Depends(get_current_user),
     db: Session        = Depends(get_db),
 ) -> list[PostResponse]:
-    """Return all posts created by the currently authenticated user."""
+    """Return all posts created by the currently authenticated user (with owner join)."""
     return (
         db.query(Post)
+        .options(joinedload(Post.owner))
         .filter(Post.user_id == current_user.id)
         .order_by(Post.created_at.desc())
         .all()
     )
+
+
+# ── PATCH /api/posts/{post_id} ────────────────────────────────────────────────
+
+@router.patch("/{post_id}", response_model=PostResponse)
+def update_post(
+    post_id: int,
+    payload: PostUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session        = Depends(get_db),
+) -> PostResponse:
+    """
+    Edit a post's text fields (description, location, trip dates).
+    Only the post owner may update their post.
+    """
+    post = _get_post_with_owner(post_id, db)
+
+    if post.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only edit your own posts")
+
+    if payload.description is not None:
+        post.description = payload.description
+
+    if payload.location is not None:
+        post.location = {
+            "name": payload.location.name or "",
+            "lat":  payload.location.lat,
+            "lng":  payload.location.lng,
+        }
+
+    if payload.trip_start is not None:
+        post.trip_start = payload.trip_start
+
+    if payload.trip_end is not None:
+        post.trip_end = payload.trip_end
+
+    db.commit()
+    db.refresh(post)
+    return _get_post_with_owner(post_id, db)
+
+
+# ── DELETE /api/posts/{post_id} ───────────────────────────────────────────────
+
+@router.delete("/{post_id}", status_code=204)
+def delete_post(
+    post_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session        = Depends(get_db),
+):
+    """
+    Delete a post. Only the post owner may delete it.
+    Returns 204 No Content on success.
+    """
+    post = db.query(Post).filter(Post.id == post_id).first()
+    if not post:
+        raise HTTPException(status_code=404, detail="Post not found")
+    if post.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="You can only delete your own posts")
+
+    db.delete(post)
+    db.commit()
+    return None
 
 
 # ── GET /api/posts/{post_id}/similar ──────────────────────────────────────────
@@ -188,9 +246,7 @@ def get_similar_posts(
 ) -> list[PostResponse]:
     """
     Find posts visually similar to the target post using pgvector cosine distance
-    on SigLIP2 embeddings.
-
-    Falls back to recency ordering when the target post has no embedding yet.
+    on SigLIP2 embeddings. Falls back to recency ordering when no embedding exists.
     """
     target_post = db.query(Post).filter(Post.id == post_id).first()
     if not target_post:
@@ -199,6 +255,7 @@ def get_similar_posts(
     if target_post.embedding is None:
         return (
             db.query(Post)
+            .options(joinedload(Post.owner))
             .filter(Post.id != post_id)
             .order_by(Post.created_at.desc())
             .limit(limit)
@@ -206,8 +263,6 @@ def get_similar_posts(
         )
 
     from sqlalchemy import text
-    # pgvector requires "[v1,v2,...,vn]" — comma-separated, no scientific notation.
-    # str(target_post.embedding) gives numpy-style "[ 1.2e-02  3.4e-02 ...]" which is rejected.
     emb_str = "[" + ",".join(f"{v:.8f}" for v in target_post.embedding) + "]"
     results = db.execute(
         text("""
@@ -221,13 +276,17 @@ def get_similar_posts(
         {"post_id": post_id, "emb": emb_str, "limit": limit}
     ).fetchall()
 
-
     ids = [r[0] for r in results]
     if not ids:
         return []
 
     id_order = {id_: i for i, id_ in enumerate(ids)}
-    posts = db.query(Post).filter(Post.id.in_(ids)).all()
+    posts = (
+        db.query(Post)
+        .options(joinedload(Post.owner))
+        .filter(Post.id.in_(ids))
+        .all()
+    )
     posts.sort(key=lambda p: id_order[p.id])
     return posts
 
@@ -240,21 +299,15 @@ async def embed_existing_post(
     db: Session = Depends(get_db),
 ) -> PostResponse:
     """
-    Backfill embedding for an existing post that was uploaded before
-    this feature was added. Fetches the image from its Supabase URL,
-    generates a SigLIP2 embedding, and saves it.
-
-    Call this once per old post — GET /posts/{id}/similar will then
-    return embedding-based results instead of the recency fallback.
+    Backfill embedding for an existing post.
     """
     post = db.query(Post).filter(Post.id == post_id).first()
     if not post:
         raise HTTPException(status_code=404, detail="Post not found")
 
     if post.embedding is not None:
-        return post  # already has embedding, nothing to do
+        return _get_post_with_owner(post_id, db)
 
-    # Fetch image bytes from Supabase public URL
     try:
         async with httpx.AsyncClient(timeout=30) as client:
             r = await client.get(post.image_url)
@@ -266,7 +319,6 @@ async def embed_existing_post(
     except Exception as e:
         raise HTTPException(502, f"Image fetch failed: {e}")
 
-    # Embed via local CLIP model (CPU-bound → thread executor)
     try:
         loop = asyncio.get_running_loop()
         embedding = await loop.run_in_executor(None, get_image_embedding, image_bytes)
@@ -276,4 +328,4 @@ async def embed_existing_post(
     post.embedding = embedding
     db.commit()
     db.refresh(post)
-    return post
+    return _get_post_with_owner(post_id, db)
