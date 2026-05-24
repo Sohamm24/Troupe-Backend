@@ -2,12 +2,8 @@
 models.py
 ---------
 SQLAlchemy ORM models.
-Updated Post model adds: tags, likes, saves, trip_start, trip_end,
-single image_url (replacing image_urls array), location as JSON string,
-and a SigLIP2 vector embedding for pgvector similarity search.
 """
 
-from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, TIMESTAMP, UniqueConstraint
 from sqlalchemy.orm import relationship
@@ -90,9 +86,6 @@ class Post(Base):
     
     # Trip duration in days
     trip_days   = Column(Integer, nullable=True)
-
-    # SigLIP2 embedding for pgvector cosine similarity search
-    embedding = Column(Vector(512), nullable=True)
 
     created_at  = Column(TIMESTAMP(timezone=True), server_default=func.now())
 

@@ -1,12 +1,12 @@
 """
 routers/posts.py
 -----------------
-POST   /api/posts/                — Create a new travel post
-GET    /api/posts/user            — Get all posts for the current user (with owner join)
-PATCH  /api/posts/{id}            — Edit a post's text fields (owner only)
-DELETE /api/posts/{id}            — Delete a post (owner only)
-GET    /api/posts/{id}/similar    — Visually similar posts via pgvector cosine search
-POST   /api/posts/{id}/embed      — Backfill SigLIP2 embedding for an existing post
+POST   /api/posts/          — Create a new travel post
+GET    /api/posts/user       — Get all posts for the current user (with owner join)
+GET    /api/posts/saved      — Get saved posts for the current user
+PATCH  /api/posts/{id}       — Edit a post's text fields (owner only)
+DELETE /api/posts/{id}       — Delete a post (owner only)
+GET    /api/posts/{id}/similar — Return recent posts (simple recency fallback)
 """
 
 import json
@@ -15,8 +15,6 @@ import logging
 import os
 import asyncio
 
-import httpx
-
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
@@ -24,7 +22,6 @@ from typing import Optional
 from database import get_db
 from models import Post, User, PostLike, PostSave
 from schemas import PostResponse, PostUpdateRequest
-from services.embedding import get_image_embedding
 
 router = APIRouter()
 logger = logging.getLogger("travel_pinterest")
@@ -110,7 +107,6 @@ async def create_post(
     logger.info("Received new post request")
     try:
         media_urls = []
-        embedding = None
         async def process_image(idx: int, image: UploadFile):
             file_bytes = await image.read()
             file_ext = (image.filename or f"photo_{idx}.jpg").rsplit(".", 1)[-1]
@@ -125,21 +121,11 @@ async def create_post(
                 unique_name, 
                 image.content_type or "image/jpeg"
             )
-            
-            # For the first image, also get the embedding
-            emb = None
-            if idx == 0:
-                try:
-                    emb = await loop.run_in_executor(None, get_image_embedding, file_bytes)
-                except Exception as emb_err:
-                    logger.warning(f"Embedding failed, storing null: {emb_err}")
-                    
-            return image_url, emb
+            return image_url
 
         results = await asyncio.gather(*(process_image(i, img) for i, img in enumerate(images)))
         
-        media_urls = [res[0] for res in results]
-        embedding = results[0][1] if results else None
+        media_urls = list(results)
 
         location_data: Optional[dict] = None
         if location:
@@ -156,11 +142,10 @@ async def create_post(
         new_post = Post(
             user_id     = current_user.id,
             description = description,
-            image_url   = media_urls[0] if media_urls else None, # Legacy
+            image_url   = media_urls[0] if media_urls else None,  # Legacy
             media_urls  = media_urls,
             location    = location_data,
             trip_days   = tripDays,
-            embedding   = embedding,
             likes       = 0,
             saves       = 0,
         )
@@ -334,88 +319,12 @@ def get_similar_posts(
     limit: int = 8,
     db: Session = Depends(get_db),
 ) -> list[PostResponse]:
-    """
-    Find posts visually similar to the target post using pgvector cosine distance
-    on SigLIP2 embeddings. Falls back to recency ordering when no embedding exists.
-    """
-    target_post = db.query(Post).filter(Post.id == post_id).first()
-    if not target_post:
-        raise HTTPException(status_code=404, detail="Post not found")
-
-    if target_post.embedding is None:
-        return (
-            db.query(Post)
-            .options(joinedload(Post.owner))
-            .filter(Post.id != post_id)
-            .order_by(Post.created_at.desc())
-            .limit(limit)
-            .all()
-        )
-
-    from sqlalchemy import text
-    emb_str = "[" + ",".join(f"{v:.8f}" for v in target_post.embedding) + "]"
-    results = db.execute(
-        text("""
-            SELECT id
-            FROM posts
-            WHERE id != :post_id
-              AND embedding IS NOT NULL
-            ORDER BY embedding <=> CAST(:emb AS vector)
-            LIMIT :limit
-        """),
-        {"post_id": post_id, "emb": emb_str, "limit": limit}
-    ).fetchall()
-
-    ids = [r[0] for r in results]
-    if not ids:
-        return []
-
-    id_order = {id_: i for i, id_ in enumerate(ids)}
-    posts = (
+    """Return recent posts as a simple fallback (embedding search removed)."""
+    return (
         db.query(Post)
         .options(joinedload(Post.owner))
-        .filter(Post.id.in_(ids))
+        .filter(Post.id != post_id)
+        .order_by(Post.created_at.desc())
+        .limit(limit)
         .all()
     )
-    posts.sort(key=lambda p: id_order[p.id])
-    return posts
-
-
-# ── POST /api/posts/{post_id}/embed ───────────────────────────────────────────
-
-@router.post("/{post_id}/embed", response_model=PostResponse)
-async def embed_existing_post(
-    post_id: int,
-    db: Session = Depends(get_db),
-) -> PostResponse:
-    """
-    Backfill embedding for an existing post.
-    """
-    post = db.query(Post).filter(Post.id == post_id).first()
-    if not post:
-        raise HTTPException(status_code=404, detail="Post not found")
-
-    if post.embedding is not None:
-        return _get_post_with_owner(post_id, db)
-
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            r = await client.get(post.image_url)
-            if r.status_code != 200:
-                raise HTTPException(502, f"Could not fetch image: {r.status_code}")
-            image_bytes = r.content
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(502, f"Image fetch failed: {e}")
-
-    try:
-        loop = asyncio.get_running_loop()
-        embedding = await loop.run_in_executor(None, get_image_embedding, image_bytes)
-    except Exception as e:
-        raise HTTPException(502, f"Embedding failed: {e}")
-
-    post.embedding = embedding
-    db.commit()
-    db.refresh(post)
-    return _get_post_with_owner(post_id, db)
