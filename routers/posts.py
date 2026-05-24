@@ -15,6 +15,7 @@ import logging
 import os
 import asyncio
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import Optional
