@@ -107,6 +107,7 @@ async def create_post(
     Create a new travel post.
     Accepts multipart/form-data with multiple image fields named 'images'.
     """
+    logger.info("Received new post request")
     try:
         media_urls = []
         embedding = None
