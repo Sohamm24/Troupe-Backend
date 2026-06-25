@@ -78,3 +78,12 @@ app.websocket("/ws/discussions/{discussion_id}")(discussion_websocket_endpoint)
 @app.get("/api/v1/health", tags=["health"])
 def health():
     return {"status": "UP"}
+
+@app.get("/health", tags=["health"], include_in_schema=False)
+def root_health():
+    return {"status": "UP"}
+
+@app.get("/", tags=["health"], include_in_schema=False)
+def root():
+    return {"status": "UP", "service": "Travel Platform API"}
+
