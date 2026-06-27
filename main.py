@@ -7,7 +7,7 @@ Community-driven travel platform connecting travelers with organizers.
 import logging
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import engine
@@ -79,9 +79,9 @@ app.websocket("/ws/discussions/{discussion_id}")(discussion_websocket_endpoint)
 def health():
     return {"status": "UP"}
 
-@app.get("/health", tags=["health"], include_in_schema=False)
-def root_health():
-    return {"status": "UP"}
+@app.api_route("/health", methods=["GET", "HEAD"])
+async def health():
+    return Response(status_code=200)
 
 @app.get("/", tags=["health"], include_in_schema=False)
 def root():
