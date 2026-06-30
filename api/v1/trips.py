@@ -4,13 +4,13 @@ api/v1/trips.py
 Trip CRUD, interest management, itinerary, and FAQ endpoints.
 """
 
-from backend.schemas.trip import Step6Description
-from backend.schemas.trip import Step5TargetAudience
-from backend.schemas.trip import Step4Pricing
-from backend.schemas.trip import Step3Inclusions
-from backend.schemas.trip import Step2Itinerary
-from backend.models.trip import TripStatus
-from backend.schemas.trip import Step1BasicInfo
+from schemas.trip import Step6Description
+from schemas.trip import Step5TargetAudience
+from schemas.trip import Step4Pricing
+from schemas.trip import Step3Inclusions
+from schemas.trip import Step2Itinerary
+from models.trip import TripStatus
+from schemas.trip import Step1BasicInfo
 import logging
 from datetime import date
 
