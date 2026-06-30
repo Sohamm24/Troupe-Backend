@@ -7,8 +7,8 @@ POST /auth/refresh    — Rotate access + refresh tokens
 POST /auth/logout     — Logout (client-side token discard)
 """
 
-from backend.core.security import verify_refresh_token
-from backend.schemas.auth import RefreshAuthRequest, RefreshAuthResponse
+from core.security import verify_refresh_token
+from schemas.auth import RefreshAuthRequest, RefreshAuthResponse
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status
