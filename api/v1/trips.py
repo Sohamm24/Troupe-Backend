@@ -26,7 +26,6 @@ from models.itinerary import Itinerary
 from models.interest import InterestedTrip
 from models.discussion import Discussion
 from schemas.trip import (
-    TripCreateRequest,
     TripUpdateRequest,
     TripResponse,
     TripDetailResponse,
