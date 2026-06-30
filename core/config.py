@@ -23,7 +23,7 @@ class Settings:
     # ── Supabase Storage ──────────────────────────────────────────────────
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
-    SUPABASE_BUCKET: str = os.getenv("SUPABASE_BUCKET", "travel-pinterest")
+    SUPABASE_BUCKET: str = os.getenv("SUPABASE_BUCKET", "media")
 
 
 settings = Settings()

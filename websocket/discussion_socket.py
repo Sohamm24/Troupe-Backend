@@ -20,7 +20,7 @@ from typing import Dict, Set
 from fastapi import WebSocket, WebSocketDisconnect
 from sqlalchemy.orm import Session
 
-from database import SessionLocal
+from core.database import SessionLocal
 from models.discussion import Discussion, Message
 from core.security import decode_token
 

@@ -7,7 +7,16 @@ Trip CRUD schemas.
 from typing import Optional, List, Any
 from datetime import date, datetime
 from pydantic import BaseModel
+from sqlalchemy import Enum
 
+
+class ConfirmUploadRequest(BaseModel):
+    trip_id: str
+    file_path: str 
+
+class ReplaceImageRequest(BaseModel):
+    trip_id: str
+    new_file_path: str     
 
 class LocationModel(BaseModel):
     name: Optional[str] = None
@@ -15,26 +24,36 @@ class LocationModel(BaseModel):
     lng: Optional[float] = None
 
 
+class Inclusions(BaseModel):
+    breakfast: Optional[bool] = False
+    lunch: Optional[bool] = False
+    dinner: Optional[bool] = False
+    accommodation: Optional[bool] = False
+    vehicle_charges: Optional[bool] = False
+    guide: Optional[bool] = False
+    toll_permit_entry_fees: Optional[bool]= False
+
 class FAQItem(BaseModel):
     question: str
     answer: str
 
 
 class ItineraryActivity(BaseModel):
-    sequence: int
     title: str
-    description: Optional[str] = None
-    location: Optional[str] = None
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
+    location: LocationModel
+    time: datetime
+    media: str 
 
+class TripCategory(str, Enum):
+    BEACH = "Beach"
+    HILL = "Hill"
+    WEEKEND = "Weekend Trip"
+    WILDLIFE = "Wildlife"
+    HERITAGE = "Heritage"
+    TREKKING = "Trekking"
+    BIKERIDING = "Bike Riding"
 
-class ItineraryDay(BaseModel):
-    day_number: int
-    activities: List[ItineraryActivity] = []
-
-
-# ── Organizer info embedded in trip response ──────────────────────────────────
+# ────────────────────────────────────
 
 class TripOrganizerInfo(BaseModel):
     organizer_id: str
@@ -49,26 +68,39 @@ class TripOrganizerInfo(BaseModel):
 
 # ── Trip CRUD ─────────────────────────────────────────────────────────────────
 
-class TripCreateRequest(BaseModel):
+class Step1BasicInfo(BaseModel):
     title: str
-    location: Optional[LocationModel] = None
-    start_date: date
-    end_date: Optional[date] = None
-    is_one_day_trip: bool = False
+    thumbnail: str
+
+
+class Step2Itinerary(BaseModel):
+    itinerary: List[ItineraryActivity]
+
+
+class Step3Inclusions(BaseModel):
+    inclusions: Inclusions
+
+
+class Step4Pricing(BaseModel):
+    max_travellers: Optional[int] = None
     budget: Optional[int] = None
     confirmation_amount: Optional[int] = None
-    max_travellers: Optional[int] = None
-    description: Optional[str] = None
+    confirmation_deadline: datetime
+
+
+class Step5TargetAudience(BaseModel):
+    categories: List[TripCategory]
+
+
+class Step6Description(BaseModel):
+    description: str
     frequently_asked: Optional[List[FAQItem]] = []
-    itinerary: Optional[List[ItineraryDay]] = []
+
 
 
 class TripUpdateRequest(BaseModel):
     title: Optional[str] = None
     location: Optional[LocationModel] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    is_one_day_trip: Optional[bool] = None
     budget: Optional[int] = None
     confirmation_amount: Optional[int] = None
     max_travellers: Optional[int] = None
@@ -77,21 +109,17 @@ class TripUpdateRequest(BaseModel):
 
 class TripResponse(BaseModel):
     trip_id: str
-    organizer_id: str
     title: str
-    location: Optional[Any] = None
-    start_date: Optional[date] = None
-    end_date: Optional[date] = None
-    is_one_day_trip: bool = False
-    budget: Optional[int] = None
-    confirmation_amount: Optional[int] = None
-    max_travellers: Optional[int] = None
-    confirmed_travellers: int = 0
-    interested_count: int = 0
-    description: Optional[str] = None
+    itinerary: ItineraryActivity
+    budget: int
+    confirmation_amount: int
+    max_travellers: int
+    confirmed_travellers: int
+    interested_count: int 
+    description: str
     frequently_asked: Optional[List[Any]] = []
-    organizer: Optional[TripOrganizerInfo] = None
-    created_at: Optional[datetime] = None
+    organizer: TripOrganizerInfo
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 

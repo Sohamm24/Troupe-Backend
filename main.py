@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import engine
+from core.database import engine
 from models import Base
 from core.exceptions import register_exception_handlers
 from websocket.discussion_socket import discussion_websocket_endpoint

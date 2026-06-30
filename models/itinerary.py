@@ -10,7 +10,7 @@ from sqlalchemy import Column, ForeignKey
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
 
-from database import Base
+from core.database import Base
 
 
 class Itinerary(Base):

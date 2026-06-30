@@ -47,6 +47,8 @@ def create_refresh_token(data: dict) -> str:
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
+
+
 def decode_token(token: str) -> Optional[dict]:
     """
     Decode and validate a JWT token.
@@ -61,3 +63,22 @@ def decode_token(token: str) -> Optional[dict]:
         return payload
     except JWTError:
         return None
+
+def verify_refresh_token(refresh_token: str) -> dict:
+    """
+    Verify that the token is a valid refresh token and
+    return the payload without JWT metadata.
+    """
+    payload = decode_token(refresh_token)
+
+    if not payload:
+        raise ValueError("Invalid or expired refresh token")
+
+    if payload.get("type") != "refresh":
+        raise ValueError("Invalid token type")
+
+    return {
+        k: v
+        for k, v in payload.items()
+        if k not in {"exp", "type"}
+    }

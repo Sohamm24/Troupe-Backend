@@ -4,7 +4,7 @@ models/__init__.py
 Re-exports all ORM models and the declarative Base for easy imports.
 """
 
-from database import Base
+from core.database import Base
 
 from models.user import User
 from models.organizer import OrganizerProfile

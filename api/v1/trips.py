@@ -4,13 +4,20 @@ api/v1/trips.py
 Trip CRUD, interest management, itinerary, and FAQ endpoints.
 """
 
+from backend.schemas.trip import Step6Description
+from backend.schemas.trip import Step5TargetAudience
+from backend.schemas.trip import Step4Pricing
+from backend.schemas.trip import Step3Inclusions
+from backend.schemas.trip import Step2Itinerary
+from backend.models.trip import TripStatus
+from backend.schemas.trip import Step1BasicInfo
 import logging
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db
+from core.database import get_db
 from core.dependencies import get_current_user, require_organizer
 from models.user import User
 from models.organizer import OrganizerProfile
@@ -33,6 +40,25 @@ logger = logging.getLogger("travel_platform")
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+def _patch_step(trip_id: str, step_num: int, data: dict, organizer, db: Session) -> Trip:
+    trip = _get_owned_trip(trip_id, organizer, db)
+    for key, value in data.items():
+        setattr(trip, key, value)
+    trip.last_completed_step = max(trip.last_completed_step, step_num)
+    db.commit()
+    db.refresh(trip)
+    return trip
+
+def _get_owned_trip(trip_id: str, organizer, db: Session) -> Trip:
+    trip = (
+        db.query(Trip)
+        .filter(Trip.trip_id == trip_id, Trip.organizer_id == organizer.organizer_id)
+        .first()
+    )
+    if not trip:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Trip not found")
+    return trip    
 
 def _trip_to_response(trip: Trip) -> TripResponse:
     organizer_info = None
@@ -116,54 +142,105 @@ def _load_trip(trip_id: str, db: Session) -> Trip:
 
 # ── TRIP CRUD ─────────────────────────────────────────────────────────────────
 
-@router.post("/", response_model=TripResponse, status_code=status.HTTP_201_CREATED)
-def create_trip(
-    payload: TripCreateRequest,
+@router.post("/draft", response_model=TripResponse, status_code=status.HTTP_201_CREATED)
+def create_draft_trip(
+    payload: Step1BasicInfo,
     organizer_data=Depends(require_organizer),
     db: Session = Depends(get_db),
 ):
-    """Create a new trip. Only organizers can create trips."""
-    current_user, organizer = organizer_data
-
-    # Build location dict
-    location_data = None
-    if payload.location:
-        location_data = payload.location.model_dump()
-
-    # Build FAQ list
-    faq_data = [faq.model_dump() for faq in payload.frequently_asked] if payload.frequently_asked else []
-
-    new_trip = Trip(
+    """Step 1 — creates a draft trip and returns its trip_id."""
+    _, organizer = organizer_data
+    trip = Trip(
         organizer_id=organizer.organizer_id,
         title=payload.title,
-        location=location_data,
-        start_date=payload.start_date,
-        end_date=payload.end_date,
-        is_one_day_trip=payload.is_one_day_trip,
-        budget=payload.budget,
-        confirmation_amount=payload.confirmation_amount,
-        max_travellers=payload.max_travellers,
-        description=payload.description,
-        frequently_asked=faq_data,
+        thumbnail=payload.thumbnail,
+        status=TripStatus.DRAFT,
+        last_completed_step=1,
     )
-    db.add(new_trip)
-    db.flush()
-
-    # Create itinerary if provided
-    if payload.itinerary:
-        itinerary_data = [day.model_dump() for day in payload.itinerary]
-        itin = Itinerary(trip_id=new_trip.trip_id, itinerary=itinerary_data)
-        db.add(itin)
-
-    # Auto-create a discussion room for the trip
-    discussion = Discussion(trip_id=new_trip.trip_id)
-    db.add(discussion)
-
+    db.add(trip)
     db.commit()
-    logger.info(f"Trip created: {new_trip.trip_id} by organizer {organizer.organizer_id}")
-
-    trip = _load_trip(str(new_trip.trip_id), db)
+    db.refresh(trip)
+    logger.info(f"Draft trip created: {trip.trip_id} by organizer {organizer.organizer_id}")
     return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step1", response_model=TripResponse)
+def update_basic_info(
+    trip_id: str,
+    payload: Step1BasicInfo,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    trip = _patch_step(trip_id, 1, payload.model_dump(), organizer, db)
+    return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step2", response_model=TripResponse)
+def update_itinerary(
+    trip_id: str,
+    payload: Step2Itinerary,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    data = {"itinerary": [a.model_dump(mode="json") for a in payload.itinerary]}
+    trip = _patch_step(trip_id, 2, data, organizer, db)
+    return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step3", response_model=TripResponse)
+def update_inclusions(
+    trip_id: str,
+    payload: Step3Inclusions,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    trip = _patch_step(trip_id, 3, {"inclusions": payload.inclusions.model_dump()}, organizer, db)
+    return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step4", response_model=TripResponse)
+def update_pricing(
+    trip_id: str,
+    payload: Step4Pricing,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    trip = _patch_step(trip_id, 4, payload.model_dump(), organizer, db)
+    return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step5", response_model=TripResponse)
+def update_audience(
+    trip_id: str,
+    payload: Step5TargetAudience,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    data = {"categories": [c.value for c in payload.categories]}
+    trip = _patch_step(trip_id, 5, data, organizer, db)
+    return _trip_to_response(trip)
+
+
+@router.patch("/{trip_id}/step6", response_model=TripResponse)
+def update_description(
+    trip_id: str,
+    payload: Step6Description,
+    organizer_data=Depends(require_organizer),
+    db: Session = Depends(get_db),
+):
+    _, organizer = organizer_data
+    data = {
+        "description": payload.description,
+        "frequently_asked": [f.model_dump() for f in (payload.frequently_asked or [])],
+    }
+    trip = _patch_step(trip_id, 6, data, organizer, db)
+    return _trip_to_response(trip)
+
 
 
 @router.get("/", response_model=TripListResponse)

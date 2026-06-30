@@ -14,6 +14,9 @@ class RegisterRequest(BaseModel):
     phone: Optional[str] = None
     password: str
 
+class RefreshAuthRequest(BaseModel):
+    refresh_token: str     
+
 
 class LoginRequest(BaseModel):
     email: EmailStr
@@ -27,3 +30,9 @@ class AuthResponse(BaseModel):
     refresh_token: Optional[str] = None
 
     model_config = {"from_attributes": True}
+
+class RefreshAuthResponse(BaseModel):
+    """Returned on token refresh rotation"""
+    access_token: str
+    refresh_token: str
+ 

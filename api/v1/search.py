@@ -11,7 +11,7 @@ import logging
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session, joinedload
 
-from database import get_db
+from core.database import get_db
 from models.trip import Trip
 from models.organizer import OrganizerProfile
 from models.user import User
