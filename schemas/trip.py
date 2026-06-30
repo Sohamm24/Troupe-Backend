@@ -7,7 +7,7 @@ Trip CRUD schemas.
 from typing import Optional, List, Any
 from datetime import date, datetime
 from pydantic import BaseModel
-from sqlalchemy import Enum
+from enum import Enum
 
 
 class ConfirmUploadRequest(BaseModel):
