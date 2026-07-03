@@ -13,7 +13,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from core.database import engine
 from core.database import Base
 from core.exceptions import register_exception_handlers
-from websocket.discussion_socket import discussion_websocket_endpoint
 
 # ── API Routers ───────────────────────────────────────────────────────────────
 from modules.auth import router as auth
@@ -77,7 +76,6 @@ app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["up
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────
-app.websocket("/ws/discussions/{discussion_id}")(discussion_websocket_endpoint)
 
 
 # ── Health Check ──────────────────────────────────────────────────────────────
