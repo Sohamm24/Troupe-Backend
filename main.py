@@ -11,12 +11,18 @@ from fastapi import FastAPI, Response
 from fastapi.middleware.cors import CORSMiddleware
 
 from core.database import engine
-from models import Base
+from core.database import Base
 from core.exceptions import register_exception_handlers
 from websocket.discussion_socket import discussion_websocket_endpoint
 
 # ── API Routers ───────────────────────────────────────────────────────────────
-from api.v1 import auth, users, organizers, trips, discussions, uploads, search
+from modules.auth import router as auth
+from modules.users import router as users
+from modules.organizers import router as organizers
+from modules.trips import router as trips
+from modules.discussions import router as discussions
+from modules.uploads import router as uploads
+from modules.search import router as search
 
 logging.basicConfig(
     level=logging.INFO,
@@ -63,11 +69,11 @@ app.add_middleware(
 
 # ── REST Routes (all under /api/v1/) ─────────────────────────────────────────
 app.include_router(auth.router,         prefix="/api/v1/auth",         tags=["authentication"])
-app.include_router(users.router,        prefix="/api/v1/users",        tags=["users"])
+app.include_router(users.router,        prefix="/api/v1/user",         tags=["users"])
 app.include_router(organizers.router,   prefix="/api/v1/organizers",   tags=["organizers"])
 app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["trips"])
-app.include_router(discussions.router,  prefix="/api/v1",              tags=["discussions"])
-app.include_router(uploads.router,      prefix="/api/v1/upload",      tags=["uploads"])
+app.include_router(discussions.router,  prefix="/api/v1/discussions",  tags=["discussions"])
+app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

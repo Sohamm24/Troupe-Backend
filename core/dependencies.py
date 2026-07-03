@@ -22,7 +22,7 @@ def get_current_user(
     Extract and validate the JWT from the Authorization header.
     Returns the User ORM object.
     """
-    from models.user import User  # deferred import to avoid circular deps
+    from modules.users.models import User  # deferred import to avoid circular deps
 
     token = credentials.credentials
     payload = decode_token(token)
@@ -59,7 +59,7 @@ def require_organizer(
     Dependency that ensures the current user has an organizer profile.
     Returns a tuple of (user, organizer_profile).
     """
-    from models.organizer import OrganizerProfile  # deferred import
+    from modules.organizers.models import OrganizerProfile  # deferred import
 
     organizer = (
         db.query(OrganizerProfile)

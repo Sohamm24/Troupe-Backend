@@ -4,7 +4,7 @@ schemas/trip.py
 Trip CRUD schemas.
 """
 
-from models.trip import TripStatus
+from modules.trips.models import TripStatus
 from typing import Optional, List, Any
 from datetime import date, datetime
 from pydantic import BaseModel
@@ -139,3 +139,25 @@ class TripListResponse(BaseModel):
     page: int
     total: int
 
+
+
+"""
+schemas/itinerary.py
+--------------------
+Itinerary schemas.
+"""
+
+from typing import Optional, List, Any
+from pydantic import BaseModel
+
+
+class ItineraryResponse(BaseModel):
+    itinerary_id: Optional[str] = None
+    trip_id: str
+    itinerary: Optional[List[Any]] = []
+
+    model_config = {"from_attributes": True}
+
+
+class ItineraryUpdateRequest(BaseModel):
+    itinerary: List[Any]
