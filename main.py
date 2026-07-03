@@ -67,7 +67,7 @@ app.include_router(users.router,        prefix="/api/v1/users",        tags=["us
 app.include_router(organizers.router,   prefix="/api/v1/organizers",   tags=["organizers"])
 app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["trips"])
 app.include_router(discussions.router,  prefix="/api/v1",              tags=["discussions"])
-app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
+app.include_router(uploads.router,      prefix="/api/v1/upload",      tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
 
 # ── WebSocket ─────────────────────────────────────────────────────────────────

@@ -26,8 +26,8 @@ class LoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     """Returned on successful registration or login."""
     user_id: str
-    token: str
-    refresh_token: Optional[str] = None
+    access_token: str
+    refresh_token: str
 
     model_config = {"from_attributes": True}
 

@@ -4,6 +4,7 @@ schemas/trip.py
 Trip CRUD schemas.
 """
 
+from models.trip import TripStatus
 from typing import Optional, List, Any
 from datetime import date, datetime
 from pydantic import BaseModel
@@ -110,17 +111,19 @@ class TripUpdateRequest(BaseModel):
 class TripResponse(BaseModel):
     trip_id: str
     title: str
-    itinerary: ItineraryActivity
+    thumbnail: str
+    itinerary: List[ItineraryActivity] = []
     budget: int
     confirmation_amount: int
     max_travellers: int
     confirmed_travellers: int
     interested_count: int 
     description: str
-    frequently_asked: Optional[List[Any]] = []
+    frequently_asked: Optional[List[FAQItem]] = []
     organizer: TripOrganizerInfo
+    status: TripStatus
+    last_completed_step: int
     created_at: datetime
-
     model_config = {"from_attributes": True}
 
 
@@ -135,3 +138,4 @@ class TripListResponse(BaseModel):
     trips: List[TripResponse]
     page: int
     total: int
+

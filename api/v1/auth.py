@@ -93,7 +93,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
 
     return AuthResponse(
         user_id=str(new_user.user_id),
-        token=access_token,
+        access_token=access_token,
         refresh_token=refresh_token,
     )
 
@@ -118,7 +118,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
 
     return AuthResponse(
         user_id=str(user.user_id),
-        token=access_token,
+        access_token=access_token,
         refresh_token=refresh_token,
     )
 

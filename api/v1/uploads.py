@@ -25,7 +25,7 @@ MAX_FILE_SIZE_MB = 10
 # ── Schemas ────────────────────────────────────────────────────────────────────
  
 class PresignRequest(BaseModel):
-    trip_id: str
+    trip_id: str 
     # "thumbnail" | "itinerary"
     media_context: str
     # e.g. "image/jpeg"
@@ -59,9 +59,19 @@ def _ext(mime_type: str) -> str:
 def _check_trip_ownership(trip: Trip | None, user: User) -> Trip:
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
-    # use one consistent field — organizer_id on trip, organizer_id on user
-    if trip.organizer_id != user.organizer_id:
-        raise HTTPException(status_code=403, detail="Not authorized")
+
+    if not user.organizer_profile:
+        raise HTTPException(
+            status_code=403,
+            detail="Organizer profile not found",
+        )
+
+    if trip.organizer_id != user.organizer_profile.organizer_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Not authorized",
+        )
+
     return trip
  
  
@@ -81,7 +91,7 @@ def _build_path(trip_id: str, media_context: str, ext: str, slot: str | None) ->
  
 # ── Routes ─────────────────────────────────────────────────────────────────────
  
-@router.post("/upload/presign")
+@router.post("/presign")
 async def create_signed_upload(
     body: PresignRequest,
     current_user: User = Depends(get_current_user),
@@ -106,24 +116,22 @@ async def create_signed_upload(
  
     try:
         res = supabase.storage.from_(settings.SUPABASE_BUCKET).create_signed_upload_url(file_path)
+        logger.info("Supabase response: %r", res)
+        logger.info("Response type: %s", type(res))
     except Exception as e:
         logger.exception("Supabase presign failed")
         raise HTTPException(status_code=500, detail="Could not generate upload URL")
  
-    if not res or "signedURL" not in res:
+    if not res or "signed_url" not in res:
         raise HTTPException(status_code=500, detail="Invalid response from storage")
  
     return {
-        "success": True,
-        "data": {
-            "path": file_path,
-            "signed_url": res["signedURL"],
-            "token": res.get("token"),
-        },
+        "presigned_url": res["signed_url"],
+        "file_path": file_path,
     }
  
  
-@router.post("/upload/confirm", status_code=status.HTTP_200_OK)
+@router.post("/confirm", status_code=status.HTTP_200_OK)
 async def confirm_upload(
     payload: ConfirmUploadRequest,
     current_user: User = Depends(get_current_user),
