@@ -130,8 +130,7 @@ class TripResponse(BaseModel):
 class TripDetailResponse(TripResponse):
     """Extended trip response including itinerary and discussion preview."""
     itinerary: Optional[List[Any]] = None
-    discussion_id: Optional[str] = None
-    is_interested: bool = False
+    is_confirmed: bool = False
 
 
 class TripListResponse(BaseModel):

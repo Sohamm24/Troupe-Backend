@@ -1,18 +1,17 @@
-from modules.trips.service import _trip_to_detail
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_user, require_organizer
 from modules.users.models import User
 from modules.trips.schemas import (
-    TripUpdateRequest, TripResponse, TripDetailResponse, TripListResponse, 
+    TripUpdateRequest, TripResponse, TripListResponse, 
     Step1BasicInfo, Step2Itinerary, Step3Inclusions, Step4Pricing, Step5TargetAudience, Step6Description,
     ItineraryResponse, ItineraryUpdateRequest
 )
 from modules.trips.service import (
     _patch_step, process_create_draft, process_publish_trip, process_update_trip, process_delete_trip, _trip_to_response
 )
-from modules.trips.repository import get_trip_with_details, get_owned_trip, update_trip, get_trip_by_id
+from modules.trips.repository import update_trip, get_trip_by_id
 from modules.trips.models import Trip
 from sqlalchemy.orm import joinedload
 from modules.organizers.models import OrganizerProfile
@@ -97,11 +96,11 @@ def list_trips(
             
     return TripListResponse(trips=[_trip_to_response(t) for t in unique_trips], page=page, total=total)
 
-@router.get("/{trip_id}", response_model=TripDetailResponse)
+@router.get("/{trip_id}", response_model=TripResponse)
 def get_trip_details(trip_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     trip = db.query(Trip).filter(Trip.trip_id == trip_id).options(joinedload(Trip.organizer).joinedload(OrganizerProfile.user)).first()
     if not trip: raise HTTPException(status_code=404, detail="Trip not found")
-    return _trip_to_detail(trip)
+    return _trip_to_response(trip)
 
 @router.patch("/{trip_id}", response_model=TripResponse)
 def patch_trip(trip_id: str, payload: TripUpdateRequest, organizer_data=Depends(require_organizer), db: Session = Depends(get_db)):
