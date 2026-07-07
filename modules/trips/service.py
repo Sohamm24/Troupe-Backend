@@ -50,7 +50,7 @@ def _trip_to_detail(trip: Trip, user_id=None, db: Session = None) -> TripDetailR
 
     itinerary_data = None
     if trip.itinerary:
-        itinerary_data = trip.itinerary.itinerary
+        itinerary_data = trip.itinerary
 
     discussion_id = None
     if trip.discussions:
