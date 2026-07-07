@@ -1,4 +1,4 @@
-from backend.modules.trips.service import _trip_to_detail
+from modules.trips.service import _trip_to_detail
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from core.database import get_db
