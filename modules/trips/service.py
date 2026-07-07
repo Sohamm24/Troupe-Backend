@@ -1,5 +1,5 @@
-from backend.modules.discussions.repository import is_user_interested
-from backend.modules.users.repository import get_user_with_organizer_profile
+from modules.discussions.repository import is_user_interested
+from modules.users.repository import get_user_with_organizer_profile
 from modules.discussions.service import create_trip_discussion
 import logging
 from sqlalchemy.orm import Session
