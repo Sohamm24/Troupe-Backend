@@ -36,11 +36,7 @@ class User(Base):
         uselist=False,
         cascade="all, delete-orphan",
     )
-    interested_trips = relationship(
-        "InterestedTrip",
-        back_populates="user",
-        cascade="all, delete-orphan",
-    )
+
     messages = relationship(
         "Message",
         back_populates="user",

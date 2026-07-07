@@ -62,9 +62,7 @@ class Trip(Base):
     )
 
     organizer = relationship("OrganizerProfile", back_populates="trips")
-    interested_users = relationship(
-        "InterestedTrip", back_populates="trip", cascade="all, delete-orphan"
-    )
+
     discussions = relationship(
         "Discussion", back_populates="trip", cascade="all, delete-orphan"
     )
