@@ -1,3 +1,4 @@
+from backend.modules.trips.service import _trip_to_detail
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 from core.database import get_db
@@ -9,8 +10,7 @@ from modules.trips.schemas import (
     ItineraryResponse, ItineraryUpdateRequest
 )
 from modules.trips.service import (
-    _patch_step, process_create_draft, process_publish_trip, process_update_trip, process_delete_trip,
-    process_mark_interested, process_remove_interest, process_list_interested_users, _trip_to_response, _trip_to_detail
+    _patch_step, process_create_draft, process_publish_trip, process_update_trip, process_delete_trip, _trip_to_response
 )
 from modules.trips.repository import get_trip_with_details, get_owned_trip, update_trip, get_trip_by_id
 from modules.trips.models import Trip
@@ -97,11 +97,11 @@ def list_trips(
             
     return TripListResponse(trips=[_trip_to_response(t) for t in unique_trips], page=page, total=total)
 
-@router.get("/{trip_id}", response_model=TripResponse)
+@router.get("/{trip_id}", response_model=TripDetailResponse)
 def get_trip_details(trip_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     trip = db.query(Trip).filter(Trip.trip_id == trip_id).options(joinedload(Trip.organizer).joinedload(OrganizerProfile.user)).first()
     if not trip: raise HTTPException(status_code=404, detail="Trip not found")
-    return _trip_to_response(trip)
+    return _trip_to_detail(trip)
 
 @router.patch("/{trip_id}", response_model=TripResponse)
 def patch_trip(trip_id: str, payload: TripUpdateRequest, organizer_data=Depends(require_organizer), db: Session = Depends(get_db)):
@@ -115,15 +115,15 @@ def remove_trip(trip_id: str, organizer_data=Depends(require_organizer), db: Ses
 
 @router.post("/{trip_id}/interested", status_code=status.HTTP_201_CREATED)
 def mark_interested(trip_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_mark_interested(trip_id, current_user, db)
+    return 
 
 @router.delete("/{trip_id}/interested")
 def remove_interest(trip_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_remove_interest(trip_id, current_user, db)
+    return 
 
 @router.get("/{trip_id}/interested")
 def list_interested_users(trip_id: str, db: Session = Depends(get_db)):
-    return process_list_interested_users(trip_id, db)
+    return 
 
 @router.get("/{trip_id}/itinerary", response_model=ItineraryResponse)
 def get_itinerary(trip_id: str, db: Session = Depends(get_db)):

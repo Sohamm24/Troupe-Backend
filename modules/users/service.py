@@ -8,9 +8,6 @@ from modules.users.repository import (
     get_user_with_organizer_profile,
     get_organizer_profile_by_user_id,
     create_organizer_profile,
-    get_upcoming_trips_for_user,
-    get_past_trips_for_user,
-    get_interested_trips_for_user
 )
 
 logger = logging.getLogger("travel_platform")
@@ -22,6 +19,7 @@ def _user_to_response(user: User) -> UserResponse:
         email=user.email,
         phone=user.phone,
         is_organizer=user.organizer_profile is not None,
+        organizer_id=str(user.organizer_profile.organizer_id) if user.organizer_profile else None,
         created_at=user.created_at,
     )
 
@@ -42,9 +40,6 @@ def _trip_to_response(trip) -> TripResponse:
         organizer_id=str(trip.organizer_id),
         title=trip.title,
         location=trip.location,
-        start_date=trip.start_date,
-        end_date=trip.end_date,
-        is_one_day_trip=trip.is_one_day_trip,
         budget=trip.budget,
         confirmation_amount=trip.confirmation_amount,
         max_travellers=trip.max_travellers,
@@ -86,14 +81,4 @@ def process_become_organizer(current_user: User, db: Session):
         "message": "You are now an organizer",
     }
 
-def process_get_upcoming_trips(current_user: User, db: Session):
-    trips = get_upcoming_trips_for_user(db, current_user.user_id)
-    return [_trip_to_response(t) for t in trips]
 
-def process_get_past_trips(current_user: User, db: Session):
-    trips = get_past_trips_for_user(db, current_user.user_id)
-    return [_trip_to_response(t) for t in trips]
-
-def process_get_interested_trips(current_user: User, db: Session):
-    trips = get_interested_trips_for_user(db, current_user.user_id)
-    return [_trip_to_response(t) for t in trips]

@@ -6,7 +6,12 @@ from sqlalchemy import pool
 from alembic import context
 from core.database import Base
 
-from models import *
+
+import modules.users.models
+import modules.organizers.models
+import modules.trips.models
+import modules.discussions.models
+
 from core.config import settings
 
 # this is the Alembic Config object, which provides

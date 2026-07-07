@@ -9,9 +9,6 @@ from modules.users.service import (
     process_get_me,
     process_update_me,
     process_become_organizer,
-    process_get_upcoming_trips,
-    process_get_past_trips,
-    process_get_interested_trips
 )
 
 router = APIRouter()
@@ -43,18 +40,18 @@ def get_upcoming_trips(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return process_get_upcoming_trips(current_user, db)
+    return []
 
 @router.get("/me/past-trips", response_model=list[TripResponse])
 def get_past_trips(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return process_get_past_trips(current_user, db)
+    return []
 
 @router.get("/me/interested-trips", response_model=list[TripResponse])
 def get_interested_trips(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
-    return process_get_interested_trips(current_user, db)
+    return []

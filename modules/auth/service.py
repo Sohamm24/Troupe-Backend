@@ -1,3 +1,4 @@
+from core.security import verify_access_token
 import logging
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -95,3 +96,14 @@ def process_logout(payload, db: Session):
             pass
 
     return {"success": True, "message": "Logged out successfully"}
+
+
+def get_user_from_token(access_token: str, db: Session):
+    try:
+        token_data = verify_access_token(access_token)
+        user = get_user_by_id(db, token_data["sub"])
+        if not user:
+            return None
+        return user
+    except ValueError:
+        return None

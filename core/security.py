@@ -82,3 +82,19 @@ def verify_refresh_token(refresh_token: str) -> dict:
         for k, v in payload.items()
         if k not in {"exp", "type"}
     }
+
+
+def verify_access_token(access_token: str) -> dict:
+    payload = decode_token(access_token)
+
+    if not payload:
+        raise ValueError("Invalid or expired access token")
+
+    if payload.get("type") != "access":
+        raise ValueError("Invalid token type")
+
+    return {
+        k: v
+        for k, v in payload.items()
+        if k not in {"exp", "type"}
+    }

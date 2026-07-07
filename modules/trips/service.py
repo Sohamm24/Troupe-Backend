@@ -1,13 +1,16 @@
+from backend.modules.discussions.repository import is_user_interested
+from backend.modules.users.repository import get_user_with_organizer_profile
+from modules.discussions.service import create_trip_discussion
 import logging
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
-from modules.trips.models import Trip, InterestedTrip, TripStatus
+from modules.trips.models import Trip, TripStatus
 from modules.trips.schemas import (
     TripResponse, TripDetailResponse, TripListResponse, TripOrganizerInfo, ItineraryActivity, ItineraryResponse
 )
 from modules.trips.repository import (
     get_trip_by_id, get_owned_trip, create_trip, update_trip, delete_trip,
-    get_trip_with_details, get_interest, create_interest, delete_interest, get_interests_for_trip
+    get_trip_with_details
 )
 
 logger = logging.getLogger("travel_platform")
@@ -53,23 +56,19 @@ def _trip_to_detail(trip: Trip, user_id=None, db: Session = None) -> TripDetailR
     if trip.discussions:
         discussion_id = str(trip.discussions[0].discussion_id)
 
-    is_interested = False
+    is_interested = False    
     if user_id and db:
-        interest = (
-            db.query(InterestedTrip)
-            .filter(
-                InterestedTrip.user_id == user_id,
-                InterestedTrip.trip_id == trip.trip_id,
-            )
-            .first()
-        )
-        is_interested = interest is not None
+        user = get_user_with_organizer_profile(db, user_id)
+        is_interested=is_user_interested(db,discussion_id,user_id)
+        if user.organizer.organizer_id == trip.organizer_id:
+            is_interested = True
+        
 
     return TripDetailResponse(
         **base.model_dump(),
         itinerary=itinerary_data,
         discussion_id=discussion_id,
-        is_interested=is_interested,
+        is_interested=is_interested
     )
 
 
@@ -94,7 +93,10 @@ def process_publish_trip(trip_id: str, organizer, db: Session):
     if trip.last_completed_step < 6:
         raise HTTPException(status_code=400, detail="Complete all steps before publishing.")
     trip.status = TripStatus.PUBLISHED
-    update_trip(db, trip)
+    update_trip(db, trip, commit=False)
+    create_trip_discussion(trip_id, organizer, db, commit=False)
+    db.commit()
+    db.refresh(trip)
     return {"message": "Trip published successfully", "trip_id": str(trip.trip_id), "status": trip.status}
 
 def process_update_trip(trip_id: str, payload, organizer, db: Session):
@@ -124,37 +126,3 @@ def process_delete_trip(trip_id: str, organizer, db: Session):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own trips")
     delete_trip(db, trip)
     logger.info(f"Trip {trip_id} deleted by organizer {organizer.organizer_id}")
-
-def process_mark_interested(trip_id: str, user, db: Session):
-    trip = get_trip_by_id(db, trip_id)
-    if not trip: raise HTTPException(status_code=404, detail="Trip not found")
-    if get_interest(db, trip_id, user.user_id):
-        return {"success": True, "message": "Already interested"}
-    create_interest(db, InterestedTrip(user_id=user.user_id, trip_id=trip.trip_id))
-    trip.interested_count += 1
-    update_trip(db, trip)
-    return {"success": True, "message": "Marked as interested"}
-
-def process_remove_interest(trip_id: str, user, db: Session):
-    trip = get_trip_by_id(db, trip_id)
-    if not trip: raise HTTPException(status_code=404, detail="Trip not found")
-    interest = get_interest(db, trip_id, user.user_id)
-    if interest:
-        delete_interest(db, interest)
-        trip.interested_count = max(0, trip.interested_count - 1)
-        update_trip(db, trip)
-    return {"success": True, "message": "Interest removed"}
-
-def process_list_interested_users(trip_id: str, db: Session):
-    trip = get_trip_by_id(db, trip_id)
-    if not trip: raise HTTPException(status_code=404, detail="Trip not found")
-    interests = get_interests_for_trip(db, trip_id)
-    users = []
-    for i in interests:
-        if i.user:
-            users.append({
-                "user_id": str(i.user.user_id),
-                "name": i.user.name,
-                "interested_at": i.created_at.isoformat() if i.created_at else None,
-            })
-    return {"success": True, "data": users}

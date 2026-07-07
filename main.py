@@ -74,10 +74,6 @@ app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["tr
 app.include_router(discussions.router,  prefix="/api/v1/discussions",  tags=["discussions"])
 app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
-
-# ── WebSocket ─────────────────────────────────────────────────────────────────
-
-
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/api/v1/health", tags=["health"])
 def health():

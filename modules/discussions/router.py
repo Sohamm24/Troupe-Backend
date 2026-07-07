@@ -1,38 +1,117 @@
-from fastapi import APIRouter, Depends, Query, status
+import json
+
+from fastapi import APIRouter, Depends, Query, WebSocket, WebSocketDisconnect, HTTPException
 from sqlalchemy.orm import Session
+
+from modules.auth.service import get_user_from_token
 from core.database import get_db
 from core.dependencies import get_current_user
 from modules.users.models import User
 from modules.discussions.schemas import (
-    DiscussionResponse, MessageCreateRequest, MessageUpdateRequest, MessageResponse, MessageListResponse
+    MessageCreateRequest, MessageUpdateRequest, MessageResponse, MessageListResponse
 )
 from modules.discussions.service import (
-    process_create_discussion, process_get_trip_discussions, process_send_message, process_get_messages,
-    process_edit_message, process_delete_message
+    get_traveller_discussions,
+    get_organizer_discussions,
+    save_message,
+    process_get_messages,
+    edit_message,
+    remove_message,
+    leave_discussion,
 )
+from modules.discussions.websocket import manager
+
 
 router = APIRouter()
 
-@router.post("/trips/{trip_id}/discussions", status_code=status.HTTP_201_CREATED)
-def create_discussion(trip_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_create_discussion(trip_id, current_user, db)
 
-@router.get("/trips/{trip_id}/discussions", response_model=DiscussionResponse)
-def get_trip_discussions(trip_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_get_trip_discussions(trip_id, current_user, db)
+@router.get("/trips", response_model=None)
+async def traveller_discussions(
+    trip_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_traveller_discussions(trip_id, current_user, db)
 
-@router.post("/discussions/{discussion_id}/messages", response_model=MessageResponse, status_code=status.HTTP_201_CREATED)
-def send_message(discussion_id: str, payload: MessageCreateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_send_message(discussion_id, payload, current_user, db)
 
-@router.get("/discussions/{discussion_id}/messages", response_model=MessageListResponse)
-def get_messages(discussion_id: str, page: int = Query(1, ge=1), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+@router.get("/organizer", response_model=None)
+async def organizer_discussions(
+    trip_id: str = Query(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return get_organizer_discussions(trip_id, current_user, db)
+
+
+@router.delete("/{discussion_id}")
+async def leave_discussion_route(
+    discussion_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    leave_discussion(discussion_id, current_user, db)
+    return {"success": True, "message": "Left discussion"}
+
+
+@router.websocket("/{discussion_id}")
+async def join_discussion(
+    discussion_id: str,
+    websocket: WebSocket,
+    access_token: str = Query(None),
+    db: Session = Depends(get_db),
+):
+    current_user = get_user_from_token(access_token, db)
+    if not current_user:
+        await websocket.close(code=4001)
+        return
+
+    await manager.connect(websocket, room_id=discussion_id)
+    try:
+        while True:
+            raw = await websocket.receive_text()
+
+            # Parse the incoming JSON payload into a MessageCreateRequest.
+            try:
+                payload = MessageCreateRequest(**json.loads(raw))
+            except Exception:
+                await websocket.send_text(
+                    json.dumps({"error": "Invalid message payload"})
+                )
+                continue
+
+            message = save_message(discussion_id, payload, current_user, db)
+            # Broadcast the serialised MessageResponse to everyone in the room.
+            await manager.broadcast(message.model_dump_json(), room_id=discussion_id)
+
+    except WebSocketDisconnect:
+        manager.disconnect(websocket)
+
+
+@router.get("/{discussion_id}/messages", response_model=MessageListResponse)
+async def get_messages(
+    discussion_id: str,
+    page: int = Query(1, ge=1),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
     return process_get_messages(discussion_id, page, db)
 
-@router.patch("/messages/{message_id}", response_model=MessageResponse)
-def edit_message(message_id: str, payload: MessageUpdateRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_edit_message(message_id, payload, current_user, db)
 
-@router.delete("/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_message(message_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    process_delete_message(message_id, current_user, db)
+@router.patch("/messages/{message_id}", response_model=MessageResponse)
+async def edit(
+    message_id: str,
+    body: MessageUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return edit_message(message_id, body, current_user, db)
+
+
+@router.delete("/messages/{message_id}")
+async def delete(
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    remove_message(message_id, current_user, db)
+    return {"success": True, "message": "Message deleted"}

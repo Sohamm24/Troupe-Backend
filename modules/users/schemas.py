@@ -15,6 +15,7 @@ class UserResponse(BaseModel):
     email: str
     phone: Optional[str] = None
     is_organizer: bool = False
+    organizer_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
     model_config = {"from_attributes": True}
