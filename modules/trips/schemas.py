@@ -118,7 +118,6 @@ class TripResponse(BaseModel):
     confirmation_amount: int
     max_travellers: int
     confirmed_travellers: int
-    interested_count: int 
     description: str
     frequently_asked: Optional[List[FAQItem]] = []
     organizer: TripOrganizerInfo
