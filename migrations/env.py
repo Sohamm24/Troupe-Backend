@@ -10,7 +10,7 @@ from core.database import Base
 import modules.users.models
 import modules.organizers.models
 import modules.trips.models
-import modules.discussions.models
+import modules.messaging.models
 
 from core.config import settings
 

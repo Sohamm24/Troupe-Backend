@@ -58,6 +58,7 @@ class TripCategory(str, Enum):
 
 class TripOrganizerInfo(BaseModel):
     organizer_id: str
+    user_id: Optional[str] = None          # The organizer's user account id (for messaging)
     name: Optional[str] = None
     profile_pic: Optional[str] = None
     verification_status: bool = False

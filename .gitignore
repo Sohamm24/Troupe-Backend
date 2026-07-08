@@ -51,3 +51,8 @@ __pycache__/
 *.crt
 secrets/
 secrets.py
+
+# Firebase service account credentials (contains private key — NEVER commit)
+firebase-credentials.json
+*-credentials.json
+*-service-account.json

@@ -19,9 +19,9 @@ from modules.auth import router as auth
 from modules.users import router as users
 from modules.organizers import router as organizers
 from modules.trips import router as trips
-from modules.discussions import router as discussions
 from modules.uploads import router as uploads
 from modules.search import router as search
+from modules.messaging import router as messaging
 
 logging.basicConfig(
     level=logging.INFO,
@@ -71,9 +71,9 @@ app.include_router(auth.router,         prefix="/api/v1/auth",         tags=["au
 app.include_router(users.router,        prefix="/api/v1/user",         tags=["users"])
 app.include_router(organizers.router,   prefix="/api/v1/organizers",   tags=["organizers"])
 app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["trips"])
-app.include_router(discussions.router,  prefix="/api/v1/discussions",  tags=["discussions"])
 app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
+app.include_router(messaging.router,    prefix="/api/v1/messaging",    tags=["messaging"])
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/api/v1/health", tags=["health"])
 def health():

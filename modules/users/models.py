@@ -6,7 +6,7 @@ User account table — matches the SRS Users schema with UUID primary keys.
 
 import uuid
 
-from sqlalchemy import Column, String, TIMESTAMP
+from sqlalchemy import Column, String, TIMESTAMP, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -28,6 +28,7 @@ class User(Base):
     phone = Column(String, nullable=True)
     password_hash = Column(String, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
+    fcm_token = Column(String, nullable=True)  # Firebase Cloud Messaging device token
 
     # ── Relationships ─────────────────────────────────────────────────────
     organizer_profile = relationship(
@@ -37,8 +38,10 @@ class User(Base):
         cascade="all, delete-orphan",
     )
 
-    messages = relationship(
-        "Message",
+    messages = relationship("Message",back_populates="sender",)
+    
+    user_chats = relationship(
+        "UserChat",
         back_populates="user",
         cascade="all, delete-orphan",
     )

@@ -1,6 +1,5 @@
-from modules.discussions.repository import is_user_interested
+# discussions module has been removed
 from modules.users.repository import get_user_with_organizer_profile
-from modules.discussions.service import create_trip_discussion
 import logging
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
@@ -20,6 +19,7 @@ def _trip_to_response(trip: Trip) -> TripResponse:
     if trip.organizer:
         organizer_info = TripOrganizerInfo(
             organizer_id=str(trip.organizer.organizer_id),
+            user_id=str(trip.organizer.user.user_id) if trip.organizer.user else None,
             name=trip.organizer.user.name if trip.organizer.user else None,
             profile_pic=trip.organizer.profile_pic,
             verification_status=trip.organizer.verification_status,
@@ -35,7 +35,6 @@ def _trip_to_response(trip: Trip) -> TripResponse:
         confirmation_amount=trip.confirmation_amount or 0,
         max_travellers=trip.max_travellers or 0,          
         confirmed_travellers=trip.confirmed_travellers,
-        interested_count=trip.interested_count,
         description=trip.description or "",             
         itinerary=[ItineraryActivity(**item) for item in (trip.itinerary or [])],                      
         frequently_asked=trip.frequently_asked,
@@ -52,22 +51,11 @@ def _trip_to_detail(trip: Trip, user_id=None, db: Session = None) -> TripDetailR
     if trip.itinerary:
         itinerary_data = trip.itinerary
 
-    discussion_id = None
-    if trip.discussions:
-        discussion_id = str(trip.discussions[0].discussion_id)
-
-    is_interested = False    
-    if user_id and db:
-        user = get_user_with_organizer_profile(db, user_id)
-        is_interested=is_user_interested(db,discussion_id,user_id)
-        if user.organizer.organizer_id == trip.organizer_id:
-            is_interested = True
-        
+    is_interested = False
 
     return TripDetailResponse(
         **base.model_dump(),
         itinerary=itinerary_data,
-        discussion_id=discussion_id,
         is_interested=is_interested
     )
 
@@ -94,7 +82,6 @@ def process_publish_trip(trip_id: str, organizer, db: Session):
         raise HTTPException(status_code=400, detail="Complete all steps before publishing.")
     trip.status = TripStatus.PUBLISHED
     update_trip(db, trip, commit=False)
-    create_trip_discussion(trip_id, organizer, db, commit=False)
     db.commit()
     db.refresh(trip)
     return {"message": "Trip published successfully", "trip_id": str(trip.trip_id), "status": trip.status}
