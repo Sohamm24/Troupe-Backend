@@ -62,6 +62,6 @@ class Trip(Base):
     )
 
     organizer = relationship("OrganizerProfile", back_populates="trips")
-
+    confirmations = relationship("TripConfirmation", back_populates="trip")
 
 

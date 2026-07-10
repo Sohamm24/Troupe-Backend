@@ -45,3 +45,5 @@ class User(Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+
+    confirmations = relationship("TripConfirmation", back_populates="user")

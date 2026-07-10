@@ -22,6 +22,7 @@ from modules.trips import router as trips
 from modules.uploads import router as uploads
 from modules.search import router as search
 from modules.messaging import router as messaging
+from modules.payment import router as payment
 
 logging.basicConfig(
     level=logging.INFO,
@@ -74,6 +75,7 @@ app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["tr
 app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
 app.include_router(messaging.router,    prefix="/api/v1/messaging",    tags=["messaging"])
+app.include_router(payment.router,      prefix="/api/v1/payments",     tags=["payments"])
 # ── Health Check ──────────────────────────────────────────────────────────────
 @app.get("/api/v1/health", tags=["health"])
 def health():

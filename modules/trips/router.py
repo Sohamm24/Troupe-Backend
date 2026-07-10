@@ -3,13 +3,14 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_user, require_organizer
 from modules.users.models import User
+from modules.trips.service import (
+    _patch_step, process_create_draft, process_publish_trip, process_update_trip, process_delete_trip, _trip_to_response,
+    get_confirmation_data
+)
 from modules.trips.schemas import (
     TripUpdateRequest, TripResponse, TripListResponse, 
     Step1BasicInfo, Step2Itinerary, Step3Inclusions, Step4Pricing, Step5TargetAudience, Step6Description,
-    ItineraryResponse, ItineraryUpdateRequest
-)
-from modules.trips.service import (
-    _patch_step, process_create_draft, process_publish_trip, process_update_trip, process_delete_trip, _trip_to_response
+    ItineraryResponse, ItineraryUpdateRequest, TripConfirmationDataResponse
 )
 from modules.trips.repository import update_trip, get_trip_by_id
 from modules.trips.models import Trip
@@ -155,3 +156,16 @@ def patch_faqs(trip_id: str, payload: dict, organizer_data=Depends(require_organ
     trip.frequently_asked = payload.get("frequently_asked", [])
     update_trip(db, trip)
     return {"success": True, "data": {"frequently_asked": trip.frequently_asked}}
+
+
+@router.get("/{trip_id}/confirmation-data", response_model=TripConfirmationDataResponse)
+def get_trip_confirmation_data(
+    trip_id: str,
+    db: Session = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Read-only snapshot of price and availability for the confirmation page.
+    Nothing is locked or charged here.
+    """
+    return get_confirmation_data(trip_id, db)

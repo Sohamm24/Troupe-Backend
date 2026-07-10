@@ -5,7 +5,8 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException, status
 from modules.trips.models import Trip, TripStatus
 from modules.trips.schemas import (
-    TripResponse, TripDetailResponse, TripListResponse, TripOrganizerInfo, ItineraryActivity, ItineraryResponse
+    TripResponse, TripDetailResponse, TripListResponse, TripOrganizerInfo, ItineraryActivity, ItineraryResponse,
+    TripConfirmationDataResponse
 )
 from modules.trips.repository import (
     get_trip_by_id, get_owned_trip, create_trip, update_trip, delete_trip,
@@ -113,3 +114,47 @@ def process_delete_trip(trip_id: str, organizer, db: Session):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only delete your own trips")
     delete_trip(db, trip)
     logger.info(f"Trip {trip_id} deleted by organizer {organizer.organizer_id}")
+
+
+def get_confirmation_data(trip_id: str, db: Session) -> TripConfirmationDataResponse:
+    """
+    Returns the slim confirmation-page snapshot: title, itinerary, organizer,
+    price, and seat availability.  This is a READ-ONLY endpoint — nothing is
+    locked or charged at this point.
+    """
+    from sqlalchemy.orm import joinedload
+    from modules.organizers.models import OrganizerProfile
+
+    trip = (
+        db.query(Trip)
+        .options(
+            joinedload(Trip.organizer).joinedload(OrganizerProfile.user),
+            joinedload(Trip.organizer).joinedload(OrganizerProfile.trips),
+        )
+        .filter(Trip.trip_id == trip_id)
+        .first()
+    )
+    if not trip:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    organizer_info = None
+    if trip.organizer:
+        organizer_info = TripOrganizerInfo(
+            organizer_id=str(trip.organizer.organizer_id),
+            user_id=str(trip.organizer.user.user_id) if trip.organizer.user else None,
+            name=trip.organizer.user.name if trip.organizer.user else None,
+            profile_pic=trip.organizer.profile_pic,
+            verification_status=trip.organizer.verification_status,
+            ratings=float(trip.organizer.ratings) if trip.organizer.ratings else None,
+            trip_count=len(trip.organizer.trips) if trip.organizer.trips else 0,
+        )
+
+    return TripConfirmationDataResponse(
+        title=trip.title or "",
+        itinerary=[ItineraryActivity(**item) for item in (trip.itinerary or [])],
+        organizer=organizer_info,
+        confirmation_amount=trip.confirmation_amount,
+        max_travellers=trip.max_travellers,
+        confirmed_travellers=trip.confirmed_travellers,
+    )
+

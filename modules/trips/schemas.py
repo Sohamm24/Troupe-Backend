@@ -68,6 +68,18 @@ class TripOrganizerInfo(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TripConfirmationDataResponse(BaseModel):
+    """Slim response for the confirmation page — price/availability snapshot."""
+    title: str
+    itinerary: List[ItineraryActivity] = []
+    organizer: Optional[TripOrganizerInfo] = None
+    confirmation_amount: Optional[int] = None
+    max_travellers: Optional[int] = None
+    confirmed_travellers: Optional[int] = None
+
+    model_config = {"from_attributes": True}
+
+
 # ── Trip CRUD ─────────────────────────────────────────────────────────────────
 
 class Step1BasicInfo(BaseModel):
