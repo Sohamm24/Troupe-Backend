@@ -27,6 +27,9 @@ class Payment(Base):
         index=True,
     )
     stripe_payment_intent_id = Column(String(255), nullable=True, unique=True, index=True)
+    razorpay_order_id = Column(String(255), nullable=True, unique=True, index=True)
+    razorpay_payment_id = Column(String(255), nullable=True, unique=True, index=True)
+    razorpay_signature = Column(String(255), nullable=True)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(
         TIMESTAMP(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False

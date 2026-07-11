@@ -28,8 +28,8 @@ class HoldResponse(BaseModel):
     total_amount: Decimal
     hold_expires_at: datetime
     seats_left: int
-    stripe_client_secret: str          # client_secret from Stripe PaymentIntent
-    stripe_publishable_key: str        # forwarded to frontend so it can init StripeProvider
+    razorpay_order_id: str
+    razorpay_key_id: str
 
     model_config = {"from_attributes": True}
 

@@ -41,9 +41,10 @@ class Settings:
     FIREBASE_CREDENTIALS_PATH: str = os.getenv("FIREBASE_CREDENTIALS_PATH", "firebase-credentials.json")
     FIREBASE_CREDENTIALS_JSON: str = os.getenv("FIREBASE_CREDENTIALS_JSON", "")  # alt: raw JSON string
 
-    # ── Stripe ────────────────────────────────────────────────────────────
-    STRIPE_SECRET_KEY: str = os.getenv("STRIPE_SECRET_KEY", "")
-    STRIPE_WEBHOOK_SECRET: str = os.getenv("STRIPE_WEBHOOK_SECRET", "")
+    # ── Razorpay ──────────────────────────────────────────────────────────
+    RAZORPAY_KEY_ID: str = os.getenv("RAZORPAY_KEY_ID", "")
+    RAZORPAY_SECRET_KEY: str = os.getenv("RAZORPAY_SECRET_KEY", "")
+    RAZORPAY_WEBHOOK_SECRET: str = os.getenv("RAZORPAY_WEBHOOK_SECRET", "")
     HOLD_TTL_SECONDS: int = 480  # 8 minutes, hardcoded
 
 

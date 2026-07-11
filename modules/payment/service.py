@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 
-import stripe
+import razorpay
 from fastapi import HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 
@@ -22,14 +22,14 @@ from modules.payment.repository import (
     fail_hold,
     get_hold_by_id,
     get_hold_by_idempotency,
-    get_hold_by_payment_intent,
+    get_hold_by_razorpay_order,
     confirm_hold,
 )
 from modules.payment.schemas import HoldResponse, HoldStatusResponse
 from modules.trips.models import Trip
 from modules.users.models import User
 
-stripe.api_key = settings.STRIPE_SECRET_KEY
+razorpay_client = razorpay.Client(auth=(settings.RAZORPAY_KEY_ID, settings.RAZORPAY_SECRET_KEY))
 
 logger = logging.getLogger("travel_platform")
 
@@ -51,7 +51,7 @@ def process_create_hold(
     5. Return hold details + Stripe client_secret to the frontend.
     """
 
-    # ── Idempotency check ─────────────────────────────────────────────────────
+    # ── Check idempotency ─────────────────────────────────────────────────────
     existing = get_hold_by_idempotency(db, idempotency_key)
     if existing:
         if existing.status == TripConfirmationStatus.EXPIRED:
@@ -59,8 +59,6 @@ def process_create_hold(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="Previous hold with this idempotency key has expired. Please retry with a new key.",
             )
-        # Re-build the response from the existing hold (fetch pi client_secret from Stripe)
-        pi = stripe.PaymentIntent.retrieve(existing.payment.stripe_payment_intent_id)
         total = existing.price_locked * existing.seats_count
         available = (
             (existing.trip.max_travellers or 0) - (existing.trip.confirmed_travellers or 0)
@@ -71,8 +69,8 @@ def process_create_hold(
             total_amount=total,
             hold_expires_at=existing.hold_expires_at,
             seats_left=available,
-            stripe_client_secret=pi.client_secret,
-            stripe_publishable_key=settings.STRIPE_PUBLISHABLE_KEY if hasattr(settings, "STRIPE_PUBLISHABLE_KEY") else "",
+            razorpay_order_id=existing.payment.razorpay_order_id or "",
+            razorpay_key_id=settings.RAZORPAY_KEY_ID,
         )
 
     # ── Load trip ─────────────────────────────────────────────────────────────
@@ -109,24 +107,25 @@ def process_create_hold(
     # ── Price calculation (server-side, never trust client) ───────────────────
     price_per_seat = Decimal(str(trip.confirmation_amount or 0))
     total_amount_inr = price_per_seat * seats_count
-    # Stripe uses smallest currency unit; INR does not have sub-units in practice
+    # Razorpay uses currency subunit (paise for INR)
     amount_paise = int(total_amount_inr * 100)
 
-    # ── Create Stripe PaymentIntent ───────────────────────────────────────────
+    # ── Create Razorpay Order ─────────────────────────────────────────────────
     try:
-        pi = stripe.PaymentIntent.create(
-            amount=amount_paise,
-            currency="inr",
-            metadata={
+        order_data = {
+            "amount": amount_paise,
+            "currency": "INR",
+            "receipt": f"rcpt_{idempotency_key[:30]}",
+            "notes": {
                 "trip_id": trip_id,
                 "user_id": str(current_user.user_id),
-                "seats_count": seats_count,
+                "seats_count": str(seats_count),
                 "idempotency_key": idempotency_key,
-            },
-            idempotency_key=f"pi-{idempotency_key}",  # Stripe-level idempotency
-        )
-    except stripe.error.StripeError as exc:
-        logger.error("Stripe PaymentIntent creation failed: %s", exc)
+            }
+        }
+        order = razorpay_client.order.create(data=order_data)
+    except Exception as exc:
+        logger.error("Razorpay Order creation failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="Payment gateway error. Please try again.",
@@ -140,7 +139,7 @@ def process_create_hold(
             user_id=current_user.user_id,
             seats_count=seats_count,
             idempotency_key=idempotency_key,
-            stripe_payment_intent_id=pi.id,
+            razorpay_order_id=order["id"],
         )
     except ValueError as exc:
         # Race condition: seats just got taken between our check and insert
@@ -159,8 +158,8 @@ def process_create_hold(
         total_amount=total_amount_inr,
         hold_expires_at=hold.hold_expires_at,
         seats_left=seats_left,
-        stripe_client_secret=pi.client_secret,
-        stripe_publishable_key="",  # sent separately via env; here for schema completeness
+        razorpay_order_id=order["id"],
+        razorpay_key_id=settings.RAZORPAY_KEY_ID,
     )
 
 
@@ -184,36 +183,46 @@ def process_get_hold_status(confirmation_id: str, current_user: User, db: Sessio
 
 # ── Webhook handling ──────────────────────────────────────────────────────────
 
-def process_stripe_webhook(payload: bytes, sig_header: str, db: Session) -> dict:
+def process_razorpay_webhook(payload: bytes, sig_header: str, db: Session) -> dict:
     """
-    Verify Stripe webhook signature, dispatch to appropriate handler,
+    Verify Razorpay webhook signature, dispatch to appropriate handler,
     and return a success/ignored response dict.
     """
     try:
-        event = stripe.Webhook.construct_event(
-            payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+        # Verify Razorpay signature using the utility method
+        # verify_webhook_signature takes a string payload, so we decode bytes
+        razorpay_client.utility.verify_webhook_signature(
+            payload.decode("utf-8"), sig_header, settings.RAZORPAY_WEBHOOK_SECRET
         )
-    except ValueError:
-        raise HTTPException(status_code=400, detail="Invalid payload")
-    except stripe.error.SignatureVerificationError:
+    except Exception as exc:
+        logger.error("Razorpay signature verification failed: %s", exc)
         raise HTTPException(status_code=400, detail="Invalid signature")
 
-    event_type = event["type"]
-    data_object = event["data"]["object"]
+    import json
+    try:
+        event = json.loads(payload.decode("utf-8"))
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid JSON payload")
 
-    logger.info("Stripe webhook received: %s  id=%s", event_type, event["id"])
+    event_type = event.get("event")
+    event_payload = event.get("payload", {})
+    payment_entity = event_payload.get("payment", {}).get("entity", {})
+    order_id = payment_entity.get("order_id")
+    payment_id = payment_entity.get("id")
 
-    if event_type == "payment_intent.succeeded":
-        pi_id = data_object["id"]
-        hold = get_hold_by_payment_intent(db, pi_id)
-        if hold:
-            confirm_hold(db, str(hold.trip_confirmation_id), pi_id)
-        else:
-            logger.warning("Webhook: no hold found for payment_intent %s", pi_id)
+    logger.info("Razorpay webhook received: %s order_id=%s payment_id=%s", event_type, order_id, payment_id)
 
-    elif event_type in ("payment_intent.payment_failed", "payment_intent.canceled"):
-        pi_id = data_object["id"]
-        fail_hold(db, pi_id)
+    if event_type == "payment.captured":
+        if order_id:
+            hold = get_hold_by_razorpay_order(db, order_id)
+            if hold:
+                confirm_hold(db, str(hold.trip_confirmation_id), order_id, payment_id)
+            else:
+                logger.warning("Webhook: no hold found for order %s", order_id)
+
+    elif event_type == "payment.failed":
+        if order_id:
+            fail_hold(db, order_id)
 
     else:
         logger.debug("Webhook: unhandled event type %s", event_type)

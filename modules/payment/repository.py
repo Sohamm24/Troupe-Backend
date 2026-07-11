@@ -47,11 +47,11 @@ def get_hold_by_id(db: Session, confirmation_id: str) -> Optional[TripConfirmati
     )
 
 
-def get_hold_by_payment_intent(db: Session, payment_intent_id: str) -> Optional[TripConfirmation]:
-    """Look up a hold via the Payment row's stripe_payment_intent_id."""
+def get_hold_by_razorpay_order(db: Session, order_id: str) -> Optional[TripConfirmation]:
+    """Look up a hold via the Payment row's razorpay_order_id."""
     payment = (
         db.query(Payment)
-        .filter(Payment.stripe_payment_intent_id == payment_intent_id)
+        .filter(Payment.razorpay_order_id == order_id)
         .first()
     )
     if not payment:
@@ -71,7 +71,7 @@ def create_hold(
     user_id: UUID,
     seats_count: int,
     idempotency_key: str,
-    stripe_payment_intent_id: str,
+    razorpay_order_id: str,
 ) -> TripConfirmation:
     """
     Atomically verifies seat availability, deducts seats, and creates a
@@ -88,8 +88,8 @@ def create_hold(
     price_locked = Decimal(str(trip.confirmation_amount or 0))
     expires_at = _now_utc() + timedelta(seconds=HOLD_TTL_SECONDS)
 
-    # Create the Payment row (links hold → Stripe PaymentIntent)
-    payment = Payment(stripe_payment_intent_id=stripe_payment_intent_id)
+    # Create the Payment row (links hold → Razorpay Order)
+    payment = Payment(razorpay_order_id=razorpay_order_id)
     db.add(payment)
     db.flush()  # get payment_id without committing
 
@@ -119,7 +119,8 @@ def create_hold(
 def confirm_hold(
     db: Session,
     confirmation_id: str,
-    payment_intent_id: str,
+    order_id: str,
+    payment_id: str,
 ) -> Optional[TripConfirmation]:
     """
     Flip a PENDING_PAYMENT hold to CONFIRMED and increment confirmed_travellers
@@ -143,6 +144,10 @@ def confirm_hold(
 
     hold.status = TripConfirmationStatus.CONFIRMED
 
+    # Save payment_id in the payment relation
+    if hold.payment:
+        hold.payment.razorpay_payment_id = payment_id
+
     # Atomically increment the trip's confirmed_travellers
     trip = db.query(Trip).filter(Trip.trip_id == hold.trip_id).with_for_update().first()
     if trip:
@@ -150,20 +155,20 @@ def confirm_hold(
 
     db.commit()
     db.refresh(hold)
-    logger.info("Hold %s confirmed (pi=%s)", confirmation_id, payment_intent_id)
+    logger.info("Hold %s confirmed (order_id=%s, payment_id=%s)", confirmation_id, order_id, payment_id)
     return hold
 
 
-def fail_hold(db: Session, payment_intent_id: str) -> None:
-    """Mark a hold as FAILED when the payment intent fails/is cancelled."""
-    hold = get_hold_by_payment_intent(db, payment_intent_id)
+def fail_hold(db: Session, order_id: str) -> None:
+    """Mark a hold as FAILED when the payment fails/is cancelled."""
+    hold = get_hold_by_razorpay_order(db, order_id)
     if not hold:
         return
     if hold.status != TripConfirmationStatus.PENDING_PAYMENT:
         return
     hold.status = TripConfirmationStatus.FAILED
     db.commit()
-    logger.info("Hold failed via payment_intent=%s", payment_intent_id)
+    logger.info("Hold failed via order_id=%s", order_id)
 
 
 def expire_stale_holds(db: Session) -> int:

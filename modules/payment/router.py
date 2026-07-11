@@ -20,7 +20,7 @@ from modules.payment.service import (
     process_create_hold,
     process_expire_holds,
     process_get_hold_status,
-    process_stripe_webhook,
+    process_razorpay_webhook,
 )
 from modules.payment.webhook import get_raw_body
 from modules.users.models import User
@@ -34,7 +34,7 @@ router = APIRouter()
     "/hold",
     response_model=HoldResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Create a seat hold and Stripe PaymentIntent",
+    summary="Create a seat hold and Razorpay Order",
 )
 def create_hold(
     payload: HoldRequest,
@@ -43,8 +43,8 @@ def create_hold(
 ):
     """
     Atomically checks seat availability, locks the price, and creates a
-    Stripe PaymentIntent. Returns the client_secret for the frontend to
-    complete payment with the native Stripe SDK.
+    Razorpay Order. Returns the razorpay_order_id and razorpay_key_id for
+    the frontend to complete payment with the Razorpay SDK.
     """
     return process_create_hold(
         trip_id=payload.trip_id,
@@ -70,24 +70,24 @@ def get_hold_status(
     return process_get_hold_status(confirmation_id, current_user, db)
 
 
-# ── Stripe webhook ────────────────────────────────────────────────────────────
+# ── Razorpay webhook ──────────────────────────────────────────────────────────
 
 @router.post(
     "/webhook",
     status_code=status.HTTP_200_OK,
-    summary="Stripe webhook endpoint",
+    summary="Razorpay webhook endpoint",
     include_in_schema=False,   # don't expose in OpenAPI docs
 )
-async def stripe_webhook(
+async def razorpay_webhook(
     raw_body: bytes = Depends(get_raw_body),
-    stripe_signature: str = Header(..., alias="stripe-signature"),
+    razorpay_signature: str = Header(..., alias="x-razorpay-signature"),
     db: Session = Depends(get_db),
 ):
     """
-    Stripe sends signed POST requests here on payment events.
+    Razorpay sends signed POST requests here on payment events.
     We verify the signature and flip hold status accordingly.
     """
-    return process_stripe_webhook(raw_body, stripe_signature, db)
+    return process_razorpay_webhook(raw_body, razorpay_signature, db)
 
 
 # ── Cleanup cron endpoint ─────────────────────────────────────────────────────
