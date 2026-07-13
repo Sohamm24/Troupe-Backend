@@ -134,7 +134,7 @@ def confirm_hold(
     if hold.status == TripConfirmationStatus.CONFIRMED:
         return hold  # idempotent
 
-    if hold.status not in (TripConfirmationStatus.PENDING_PAYMENT,):
+    if hold.status not in (TripConfirmationStatus.PENDING_PAYMENT, TripConfirmationStatus.FAILED):
         logger.warning(
             "confirm_hold: hold %s is in status %s, cannot confirm",
             confirmation_id,
