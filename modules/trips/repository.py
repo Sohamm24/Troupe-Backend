@@ -36,3 +36,18 @@ def get_trip_with_details(db: Session, trip_id: str):
         .filter(Trip.trip_id == trip_id)
         .first()
     )
+
+def get_confirmed_confirmations_by_user(db: Session, user_id):
+    from modules.payment.models import TripConfirmation, TripConfirmationStatus
+    
+    return (
+        db.query(TripConfirmation)
+        .options(
+            joinedload(TripConfirmation.trip).joinedload(Trip.organizer).joinedload(OrganizerProfile.user)
+        )
+        .filter(
+            TripConfirmation.user_id == user_id,
+            TripConfirmation.status == TripConfirmationStatus.CONFIRMED,
+        )
+        .all()
+    )

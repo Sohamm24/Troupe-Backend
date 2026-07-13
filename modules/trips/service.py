@@ -1,4 +1,4 @@
-# discussions module has been removed
+from typing import List
 from modules.users.repository import get_user_with_organizer_profile
 import logging
 from sqlalchemy.orm import Session
@@ -157,4 +157,10 @@ def get_confirmation_data(trip_id: str, db: Session) -> TripConfirmationDataResp
         max_travellers=trip.max_travellers,
         confirmed_travellers=trip.confirmed_travellers,
     )
+
+def process_get_confirmed_trips(user_id, db: Session) -> List[TripResponse]:
+    from modules.trips.repository import get_confirmed_confirmations_by_user
+    
+    confirmations = get_confirmed_confirmations_by_user(db, user_id)
+    return [_trip_to_response(c.trip) for c in confirmations if c.trip]
 
