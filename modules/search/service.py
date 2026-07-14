@@ -33,7 +33,7 @@ def process_unified_search(q: str, type_str: str, db: Session):
                 "bio": org.bio,
                 "region": org.region,
                 "verification_status": org.verification_status,
-                "profile_pic": org.profile_pic,
+                "profile_pic": org.user.profile_pic if org.user else None,
             })
 
     return {"success": True, "data": results}
@@ -64,6 +64,6 @@ def process_search_organizers(q: str, db: Session):
             "bio": org.bio,
             "region": org.region,
             "verification_status": org.verification_status,
-            "profile_pic": org.profile_pic,
+            "profile_pic": org.user.profile_pic if org.user else None,
         })
     return {"success": True, "data": results}

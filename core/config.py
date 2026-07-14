@@ -24,6 +24,7 @@ class Settings:
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
     SUPABASE_KEY: str = os.getenv("SUPABASE_KEY", "")
     SUPABASE_BUCKET: str = os.getenv("SUPABASE_BUCKET", "media")
+    SUPABASE_PROFILE_PICS_BUCKET: str = os.getenv("SUPABASE_PROFILE_PICS_BUCKET", "profile_pics")
 
     # ── QStash (async message dispatch) ───────────────────────────────────
     QSTASH_URL: str = os.getenv("QSTASH_URL", "")

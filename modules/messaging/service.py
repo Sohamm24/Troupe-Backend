@@ -69,11 +69,10 @@ def _msg_to_out(msg) -> MessageOut:
 def _user_to_out(user, organizer_profile=None) -> UserOut:
     organizer_id = None
     is_verified = None
-    profile_pic = None
+    profile_pic = user.profile_pic
     if organizer_profile:
         organizer_id = str(organizer_profile.organizer_id)
         is_verified = organizer_profile.verification_status
-        profile_pic = organizer_profile.profile_pic
     return UserOut(
         user_id=str(user.user_id),
         name=user.name,

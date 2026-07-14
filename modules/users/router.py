@@ -3,11 +3,12 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_user
 from modules.users.models import User
-from modules.users.schemas import UserResponse, UserUpdateRequest
+from modules.users.schemas import UserResponse, UserUpdateRequest, UpdateNameRequest
 from modules.trips.schemas import TripResponse
 from modules.users.service import (
     process_get_me,
     process_update_me,
+    process_update_name,
     process_become_organizer,
 )
 
@@ -27,6 +28,14 @@ def update_me(
     db: Session = Depends(get_db),
 ):
     return process_update_me(payload, current_user, db)
+
+@router.patch("/me/name", response_model=UserResponse)
+def update_name(
+    payload: UpdateNameRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return process_update_name(payload, current_user, db)
 
 @router.post("/become-organizer", status_code=status.HTTP_201_CREATED)
 def become_organizer(

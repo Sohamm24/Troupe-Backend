@@ -29,6 +29,7 @@ class User(Base):
     password_hash = Column(String, nullable=False)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
     fcm_token = Column(String, nullable=True)  # Firebase Cloud Messaging device token
+    profile_pic = Column(String, nullable=True)
 
     # ── Relationships ─────────────────────────────────────────────────────
     organizer_profile = relationship(

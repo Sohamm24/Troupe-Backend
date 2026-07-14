@@ -14,6 +14,7 @@ class UserResponse(BaseModel):
     name: str
     email: str
     phone: Optional[str] = None
+    profile_pic: Optional[str] = None
     is_organizer: bool = False
     organizer_id: Optional[str] = None
     created_at: Optional[datetime] = None
@@ -24,3 +25,7 @@ class UserResponse(BaseModel):
 class UserUpdateRequest(BaseModel):
     name: Optional[str] = None
     phone: Optional[str] = None
+    profile_pic: Optional[str] = None
+
+class UpdateNameRequest(BaseModel):
+    name: str

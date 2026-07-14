@@ -34,12 +34,21 @@ def _build_path(trip_id: str, media_context: str, ext: str, slot: str | None) ->
 def process_create_signed_upload(body: PresignRequest, current_user: User, db: Session):
     if body.mime_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail=f"Unsupported type. Allowed: {', '.join(ALLOWED_IMAGE_TYPES)}")
-    trip = get_trip_for_upload(db, body.trip_id)
-    _check_trip_ownership(trip, current_user)
+    
     ext = _ext(body.mime_type)
-    file_path = _build_path(body.trip_id, body.media_context, ext, body.itinerary_slot)
+    if body.media_context == "profile_pic":
+        file_path = f"users/{current_user.user_id}/profile_pic{ext}"
+        bucket = settings.SUPABASE_PROFILE_PICS_BUCKET
+    else:
+        if not body.trip_id:
+            raise HTTPException(status_code=400, detail="trip_id is required for trip uploads")
+        trip = get_trip_for_upload(db, body.trip_id)
+        _check_trip_ownership(trip, current_user)
+        file_path = _build_path(body.trip_id, body.media_context, ext, body.itinerary_slot)
+        bucket = settings.SUPABASE_BUCKET
+
     try:
-        res = supabase.storage.from_(settings.SUPABASE_BUCKET).create_signed_upload_url(file_path)
+        res = supabase.storage.from_(bucket).create_signed_upload_url(file_path)
     except Exception as e:
         logger.exception("Supabase presign failed")
         raise HTTPException(status_code=500, detail="Could not generate upload URL")
@@ -48,7 +57,13 @@ def process_create_signed_upload(body: PresignRequest, current_user: User, db: S
     return {"presigned_url": res["signed_url"], "file_path": file_path}
 
 def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db: Session):
-    bucket = settings.SUPABASE_BUCKET
+    if payload.media_context == "profile_pic":
+        bucket = settings.SUPABASE_PROFILE_PICS_BUCKET
+    else:
+        if not payload.trip_id:
+            raise HTTPException(status_code=400, detail="trip_id is required for trip uploads")
+        bucket = settings.SUPABASE_BUCKET
+
     folder = "/".join(payload.file_path.split("/")[:-1])
     filename = payload.file_path.split("/")[-1]
     try:
@@ -57,10 +72,18 @@ def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db
         raise HTTPException(status_code=500, detail="Storage check failed")
     if not any(f["name"] == filename for f in (file_list or [])):
         raise HTTPException(status_code=400, detail="File not found in storage — upload may have failed")
+    
+    if payload.media_context == "profile_pic":
+        current_user.profile_pic = payload.file_path
+        db.commit()
+        db.refresh(current_user)
+        public_url = supabase.storage.from_(bucket).get_public_url(payload.file_path)
+        return {"success": True, "data": {"user_id": str(current_user.user_id), "file_path": payload.file_path, "public_url": public_url, "media_context": payload.media_context}}
+
     trip = get_trip_for_upload(db, payload.trip_id)
     _check_trip_ownership(trip, current_user)
     if payload.media_context == "thumbnail":
-        trip.cover_image = payload.file_path
+        trip.thumbnail = payload.file_path
     elif payload.media_context == "itinerary":
         itinerary = trip.itinerary or []
         updated = False
@@ -79,13 +102,29 @@ def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db
     return {"success": True, "data": {"trip_id": trip.trip_id, "file_path": payload.file_path, "public_url": public_url, "media_context": payload.media_context}}
 
 def process_replace_image(payload: ReplaceImageRequest, current_user: User, db: Session):
+    if payload.media_context == "profile_pic":
+        bucket = settings.SUPABASE_PROFILE_PICS_BUCKET
+        old_path = current_user.profile_pic
+        current_user.profile_pic = payload.new_file_path
+        db.commit()
+        db.refresh(current_user)
+        if old_path:
+            try:
+                supabase.storage.from_(bucket).remove([old_path])
+            except Exception:
+                logger.warning("Could not delete old profile pic file %s — skipping", old_path)
+        public_url = supabase.storage.from_(bucket).get_public_url(payload.new_file_path)
+        return {"success": True, "data": {"user_id": str(current_user.user_id), "new_file_path": payload.new_file_path, "public_url": public_url, "deleted_old_file": old_path}}
+
+    if not payload.trip_id:
+        raise HTTPException(status_code=400, detail="trip_id is required for trip uploads")
     bucket = settings.SUPABASE_BUCKET
     trip = get_trip_for_upload(db, payload.trip_id)
     _check_trip_ownership(trip, current_user)
     old_path = None
     if payload.media_context == "thumbnail":
-        old_path = trip.cover_image
-        trip.cover_image = payload.new_file_path
+        old_path = trip.thumbnail
+        trip.thumbnail = payload.new_file_path
     elif payload.media_context == "itinerary":
         itinerary = trip.itinerary or []
         for item in itinerary:

@@ -18,6 +18,7 @@ def _user_to_response(user: User) -> UserResponse:
         name=user.name,
         email=user.email,
         phone=user.phone,
+        profile_pic=user.profile_pic,
         is_organizer=user.organizer_profile is not None,
         organizer_id=str(user.organizer_profile.organizer_id) if user.organizer_profile else None,
         created_at=user.created_at,
@@ -30,7 +31,7 @@ def _trip_to_response(trip) -> TripResponse:
         organizer_info = TripOrganizerInfo(
             organizer_id=str(trip.organizer.organizer_id),
             name=trip.organizer.user.name if trip.organizer.user else None,
-            profile_pic=trip.organizer.profile_pic,
+            profile_pic=trip.organizer.user.profile_pic if trip.organizer.user else None,
             verification_status=trip.organizer.verification_status,
             ratings=float(trip.organizer.ratings) if trip.organizer.ratings else None,
             trip_count=len(trip.organizer.trips) if trip.organizer.trips else 0,
@@ -60,9 +61,19 @@ def process_update_me(payload: UserUpdateRequest, current_user: User, db: Sessio
         current_user.name = payload.name
     if payload.phone is not None:
         current_user.phone = payload.phone
+    if payload.profile_pic is not None:
+        current_user.profile_pic = payload.profile_pic
     db.commit()
     db.refresh(current_user)
     logger.info(f"User {current_user.user_id} updated profile")
+    user = get_user_with_organizer_profile(db, current_user.user_id)
+    return _user_to_response(user)
+
+def process_update_name(payload, current_user: User, db: Session):
+    current_user.name = payload.name
+    db.commit()
+    db.refresh(current_user)
+    logger.info(f"User {current_user.user_id} updated name to {payload.name}")
     user = get_user_with_organizer_profile(db, current_user.user_id)
     return _user_to_response(user)
 

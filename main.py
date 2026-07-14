@@ -73,6 +73,7 @@ app.include_router(users.router,        prefix="/api/v1/user",         tags=["us
 app.include_router(organizers.router,   prefix="/api/v1/organizers",   tags=["organizers"])
 app.include_router(trips.router,        prefix="/api/v1/trips",        tags=["trips"])
 app.include_router(uploads.router,      prefix="/api/v1/uploads",      tags=["uploads"])
+app.include_router(uploads.router,      prefix="/api/v1/upload",       tags=["uploads"])
 app.include_router(search.router,       prefix="/api/v1/search",       tags=["search"])
 app.include_router(messaging.router,    prefix="/api/v1/messaging",    tags=["messaging"])
 app.include_router(payment.router,      prefix="/api/v1/payments",     tags=["payments"])

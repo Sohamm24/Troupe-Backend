@@ -18,7 +18,7 @@ def _organizer_to_response(org: OrganizerProfile) -> OrganizerResponse:
         name=org.user.name if org.user else None,
         bio=org.bio,
         verification_status=org.verification_status,
-        profile_pic=org.profile_pic,
+        profile_pic=org.user.profile_pic if org.user else None,
         region=org.region,
         ratings=org.ratings,
         trip_count=len(org.trips) if org.trips else 0,
@@ -70,7 +70,8 @@ def process_update_organizer(organizer_id: str, payload: OrganizerUpdateRequest,
 
     if payload.bio is not None: organizer.bio = payload.bio
     if payload.region is not None: organizer.region = payload.region
-    if payload.profile_pic is not None: organizer.profile_pic = payload.profile_pic
+    if payload.profile_pic is not None and organizer.user:
+        organizer.user.profile_pic = payload.profile_pic
 
     update_organizer(db, organizer)
     logger.info(f"Organizer {organizer_id} profile updated")

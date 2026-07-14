@@ -31,7 +31,6 @@ class OrganizerProfile(Base):
     )
     bio = Column(Text, nullable=True)
     verification_status = Column(Boolean, default=False, nullable=False)
-    profile_pic = Column(String, nullable=True)
     region = Column(String, nullable=True)
     ratings = Column(Numeric(2, 1), default=0.0)
     created_at = Column(TIMESTAMP(timezone=True), server_default=func.now())
