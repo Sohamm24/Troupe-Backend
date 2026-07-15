@@ -7,6 +7,7 @@ from core.config import settings
 from modules.users.models import User
 from modules.trips.models import Trip
 from supabase import create_client
+from storage3.types import CreateSignedUploadUrlOptions
 from modules.uploads.schemas import PresignRequest, ConfirmUploadRequest, ReplaceImageRequest
 from modules.uploads.repository import get_trip_for_upload, save_trip_changes
 
@@ -48,7 +49,9 @@ def process_create_signed_upload(body: PresignRequest, current_user: User, db: S
         bucket = settings.SUPABASE_BUCKET
 
     try:
-        res = supabase.storage.from_(bucket).create_signed_upload_url(file_path)
+        res = supabase.storage.from_(bucket).create_signed_upload_url(
+            file_path, options=CreateSignedUploadUrlOptions(upsert="true")
+        )
     except Exception as e:
         logger.exception("Supabase presign failed")
         raise HTTPException(status_code=500, detail="Could not generate upload URL")
