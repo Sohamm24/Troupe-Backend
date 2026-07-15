@@ -1,5 +1,6 @@
 import uuid
 import logging
+import time
 import mimetypes
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -78,6 +79,7 @@ def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db
     
     if payload.media_context == "profile_pic":
         public_url = supabase.storage.from_(bucket).get_public_url(payload.file_path)
+        public_url = f"{public_url}?t={int(time.time())}"
         current_user.profile_pic = public_url
         db.commit()
         db.refresh(current_user)
@@ -86,6 +88,7 @@ def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db
     trip = get_trip_for_upload(db, payload.trip_id)
     _check_trip_ownership(trip, current_user)
     public_url = supabase.storage.from_(bucket).get_public_url(payload.file_path)
+    public_url = f"{public_url}?t={int(time.time())}"
     if payload.media_context == "thumbnail":
         trip.thumbnail = public_url
     elif payload.media_context == "itinerary":
@@ -109,6 +112,7 @@ def process_replace_image(payload: ReplaceImageRequest, current_user: User, db: 
         bucket = settings.SUPABASE_PROFILE_PICS_BUCKET
         old_url = current_user.profile_pic
         public_url = supabase.storage.from_(bucket).get_public_url(payload.new_file_path)
+        public_url = f"{public_url}?t={int(time.time())}"
         current_user.profile_pic = public_url
         db.commit()
         db.refresh(current_user)
@@ -121,6 +125,7 @@ def process_replace_image(payload: ReplaceImageRequest, current_user: User, db: 
     _check_trip_ownership(trip, current_user)
     old_url = None
     public_url = supabase.storage.from_(bucket).get_public_url(payload.new_file_path)
+    public_url = f"{public_url}?t={int(time.time())}"
     if payload.media_context == "thumbnail":
         old_url = trip.thumbnail
         trip.thumbnail = public_url
