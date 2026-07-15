@@ -132,6 +132,7 @@ class TripResponse(BaseModel):
     confirmed_travellers: int
     description: str
     frequently_asked: Optional[List[FAQItem]] = []
+    inclusions: Inclusions
     organizer: TripOrganizerInfo
     status: TripStatus
     last_completed_step: int
