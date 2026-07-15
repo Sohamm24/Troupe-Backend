@@ -15,8 +15,3 @@ async def create_signed_upload(body: PresignRequest, current_user: User = Depend
 @router.post("/confirm", status_code=status.HTTP_200_OK)
 async def confirm_upload(payload: ConfirmUploadRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return process_confirm_upload(payload, current_user, db)
-
-@router.post("/upload/replace", status_code=status.HTTP_200_OK)
-@router.post("/replace", status_code=status.HTTP_200_OK)
-async def replace_image(payload: ReplaceImageRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    return process_replace_image(payload, current_user, db)

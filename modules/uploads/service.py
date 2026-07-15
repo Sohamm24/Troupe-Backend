@@ -107,37 +107,3 @@ def process_confirm_upload(payload: ConfirmUploadRequest, current_user: User, db
     save_trip_changes(db, trip)
     return {"success": True, "data": {"trip_id": trip.trip_id, "file_path": payload.file_path, "public_url": public_url, "media_context": payload.media_context}}
 
-def process_replace_image(payload: ReplaceImageRequest, current_user: User, db: Session):
-    if payload.media_context == "profile_pic":
-        bucket = settings.SUPABASE_PROFILE_PICS_BUCKET
-        old_url = current_user.profile_pic
-        public_url = supabase.storage.from_(bucket).get_public_url(payload.new_file_path)
-        public_url = f"{public_url}?t={int(time.time())}"
-        current_user.profile_pic = public_url
-        db.commit()
-        db.refresh(current_user)
-        return {"success": True, "data": {"user_id": str(current_user.user_id), "new_file_path": payload.new_file_path, "public_url": public_url, "deleted_old_file": old_url}}
-
-    if not payload.trip_id:
-        raise HTTPException(status_code=400, detail="trip_id is required for trip uploads")
-    bucket = settings.SUPABASE_BUCKET
-    trip = get_trip_for_upload(db, payload.trip_id)
-    _check_trip_ownership(trip, current_user)
-    old_url = None
-    public_url = supabase.storage.from_(bucket).get_public_url(payload.new_file_path)
-    public_url = f"{public_url}?t={int(time.time())}"
-    if payload.media_context == "thumbnail":
-        old_url = trip.thumbnail
-        trip.thumbnail = public_url
-    elif payload.media_context == "itinerary":
-        itinerary = trip.itinerary or []
-        for item in itinerary:
-            if str(item.get("id")) == payload.itinerary_slot:
-                old_url = item.get("image")
-                item["image"] = public_url
-                break
-        trip.itinerary = itinerary
-    else:
-        raise HTTPException(status_code=400, detail=f"Unknown media_context: {payload.media_context}")
-    save_trip_changes(db, trip)
-    return {"success": True, "data": {"trip_id": trip.trip_id, "new_file_path": payload.new_file_path, "public_url": public_url, "deleted_old_file": old_url}}
