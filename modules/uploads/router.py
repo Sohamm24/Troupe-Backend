@@ -3,8 +3,8 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import get_current_user
 from modules.users.models import User
-from modules.uploads.schemas import PresignRequest, ConfirmUploadRequest, ReplaceImageRequest
-from modules.uploads.service import process_create_signed_upload, process_confirm_upload, process_replace_image
+from modules.uploads.schemas import PresignRequest, ConfirmUploadRequest
+from modules.uploads.service import process_create_signed_upload, process_confirm_upload
 
 router = APIRouter()
 

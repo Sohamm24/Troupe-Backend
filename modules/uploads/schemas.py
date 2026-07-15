@@ -11,9 +11,3 @@ class ConfirmUploadRequest(BaseModel):
     file_path: str
     media_context: str
     itinerary_slot: str | None = None
-
-class ReplaceImageRequest(BaseModel):
-    trip_id: str | None = None
-    new_file_path: str
-    media_context: str
-    itinerary_slot: str | None = None

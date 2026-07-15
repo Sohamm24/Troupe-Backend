@@ -9,7 +9,7 @@ from modules.users.models import User
 from modules.trips.models import Trip
 from supabase import create_client
 from storage3.types import CreateSignedUploadUrlOptions
-from modules.uploads.schemas import PresignRequest, ConfirmUploadRequest, ReplaceImageRequest
+from modules.uploads.schemas import PresignRequest, ConfirmUploadRequest
 from modules.uploads.repository import get_trip_for_upload, save_trip_changes
 
 logger = logging.getLogger("travel_platform")
