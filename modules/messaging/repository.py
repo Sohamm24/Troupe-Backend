@@ -107,7 +107,7 @@ def get_user_chats(db: Session, user_id: str) -> List[UserChat]:
         .options(
             joinedload(UserChat.last_message).joinedload(Message.reply_to_message),
             joinedload(UserChat.user).joinedload(User.organizer_profile),
-            joinedload(UserChat.chat),
+            joinedload(UserChat.chat).joinedload(Chat.userchats).joinedload(UserChat.user).joinedload(User.organizer_profile),
         )
         .all()
     )

@@ -84,6 +84,11 @@ def _user_to_out(user, organizer_profile=None) -> UserOut:
 
 def _uc_to_out(uc) -> UserChatOut:
     other_user = uc.user
+    if uc.chat and uc.chat.userchats:
+        other_user_chats = [u for u in uc.chat.userchats if str(u.user_id) != str(uc.user_id)]
+        if other_user_chats:
+            other_user = other_user_chats[0].user
+
     organizer_profile = getattr(other_user, "organizer_profile", None)
     user_out = _user_to_out(other_user, organizer_profile)
     last_msg_out = _msg_to_out(uc.last_message) if uc.last_message else None
@@ -95,6 +100,7 @@ def _uc_to_out(uc) -> UserChatOut:
         unread_count=uc.unread_count,
         user=user_out,
     )
+
 
 
 # ── REST services ────────────────────────────────────────────────────────────
