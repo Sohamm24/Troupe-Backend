@@ -74,18 +74,26 @@ def create_hold(
     razorpay_order_id: str,
 ) -> TripConfirmation:
     """
-    Atomically verifies seat availability, deducts seats, and creates a
-    TripConfirmation (hold) + linked Payment row.
+    Atomically verifies seat availability, deducts seats (increments confirmed_travellers),
+    and creates a TripConfirmation (hold) + linked Payment row.
 
     Raises ValueError if not enough seats are available.
     All mutations are wrapped in a single transaction; the caller must NOT
     have already opened a savepoint.
     """
-    available = (trip.max_travellers or 0) - (trip.confirmed_travellers or 0)
+    # Query the Trip with_for_update to lock it during seats verification and reservation
+    trip_db = db.query(Trip).filter(Trip.trip_id == trip.trip_id).with_for_update().first()
+    if not trip_db:
+        raise ValueError("Trip not found")
+
+    available = (trip_db.max_travellers or 0) - (trip_db.confirmed_travellers or 0)
     if available < seats_count:
         raise ValueError(f"Only {available} seat(s) available, requested {seats_count}")
 
-    price_locked = Decimal(str(trip.confirmation_amount or 0))
+    # Reserve the seats immediately upon creating hold
+    trip_db.confirmed_travellers = (trip_db.confirmed_travellers or 0) + seats_count
+
+    price_locked = Decimal(str(trip_db.confirmation_amount or 0))
     expires_at = _now_utc() + timedelta(seconds=HOLD_TTL_SECONDS)
 
     # Create the Payment row (links hold → Razorpay Order)
@@ -95,7 +103,7 @@ def create_hold(
 
     # Create the TripConfirmation (hold)
     hold = TripConfirmation(
-        trip_id=trip.trip_id,
+        trip_id=trip_db.trip_id,
         user_id=user_id,
         payment_id=payment.payment_id,
         seats_count=seats_count,
@@ -110,7 +118,7 @@ def create_hold(
     logger.info(
         "Hold created: confirmation_id=%s trip_id=%s seats=%d",
         hold.trip_confirmation_id,
-        trip.trip_id,
+        trip_db.trip_id,
         seats_count,
     )
     return hold
@@ -123,8 +131,8 @@ def confirm_hold(
     payment_id: str,
 ) -> Optional[TripConfirmation]:
     """
-    Flip a PENDING_PAYMENT hold to CONFIRMED and increment confirmed_travellers
-    on the parent Trip. Idempotent — returns the hold unchanged if already confirmed.
+    Flip a PENDING_PAYMENT or FAILED hold to CONFIRMED.
+    Idempotent — returns the hold unchanged if already confirmed.
     """
     hold = get_hold_by_id(db, confirmation_id)
     if not hold:
@@ -148,10 +156,8 @@ def confirm_hold(
     if hold.payment:
         hold.payment.razorpay_payment_id = payment_id
 
-    # Atomically increment the trip's confirmed_travellers
-    trip = db.query(Trip).filter(Trip.trip_id == hold.trip_id).with_for_update().first()
-    if trip:
-        trip.confirmed_travellers = (trip.confirmed_travellers or 0) + hold.seats_count
+    # confirmed_travellers was already incremented at hold creation, and not decremented on failure.
+    # No further increment is needed here.
 
     db.commit()
     db.refresh(hold)
@@ -160,7 +166,7 @@ def confirm_hold(
 
 
 def fail_hold(db: Session, order_id: str) -> None:
-    """Mark a hold as FAILED when the payment fails/is cancelled."""
+    """Mark a hold as FAILED when the payment fails/is cancelled. FAILED holds can be retried until they expire, so do not decrement."""
     hold = get_hold_by_razorpay_order(db, order_id)
     if not hold:
         return
@@ -173,7 +179,7 @@ def fail_hold(db: Session, order_id: str) -> None:
 
 def expire_stale_holds(db: Session) -> int:
     """
-    Find all PENDING_PAYMENT holds whose hold_expires_at has passed,
+    Find all PENDING_PAYMENT or FAILED holds whose hold_expires_at has passed,
     mark them EXPIRED, and release their seats back to the trip.
     Returns the number of holds expired.
     """
@@ -181,7 +187,7 @@ def expire_stale_holds(db: Session) -> int:
     stale_holds = (
         db.query(TripConfirmation)
         .filter(
-            TripConfirmation.status == TripConfirmationStatus.PENDING_PAYMENT,
+            TripConfirmation.status.in_([TripConfirmationStatus.PENDING_PAYMENT, TripConfirmationStatus.FAILED]),
             TripConfirmation.hold_expires_at < now,
         )
         .all()
@@ -190,8 +196,12 @@ def expire_stale_holds(db: Session) -> int:
     count = 0
     for hold in stale_holds:
         hold.status = TripConfirmationStatus.EXPIRED
-        # No seat decrement because we never incremented confirmed_travellers on hold creation;
-        # seats are only incremented on CONFIRM. So no rollback needed here.
+        
+        # Decrement confirmed_travellers on the parent Trip to release the seats
+        trip = db.query(Trip).filter(Trip.trip_id == hold.trip_id).with_for_update().first()
+        if trip:
+            trip.confirmed_travellers = max(0, (trip.confirmed_travellers or 0) - hold.seats_count)
+            
         count += 1
 
     if count:
