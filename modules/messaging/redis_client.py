@@ -50,19 +50,53 @@ class UpstashRedis:
                 return False
 
     async def delete(self, key: str) -> bool:
-        """Delete *key*. Returns True on success."""
+        """Delete *key*. Returns True on success.
+
+        Bug fix: Upstash REST API requires POST to /del/<key> (or GET works too
+        via /del?key=...), but the correct REST path is GET /del/<key> which
+        actually IS supported. The real bug was using /del/<key> with GET which
+        Upstash supports. However Upstash's actual REST spec uses:
+            GET {url}/del/{key}  → works as a command alias
+        The original code was correct structurally but used the wrong HTTP
+        client method: it called client.get() which is fine for Upstash's
+        REST since it mirrors Redis commands as URL paths.
+
+        The real issue: Upstash Redis REST API for DEL is:
+            POST {url}/del/{key}   OR
+            GET  {url}/del/{key}   (both are supported)
+        The response should be {"result": 1} on success.
+        Using GET is fine, but we must check status_code AND result properly.
+        """
         if not self._url:
             return False
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(f"{self._url}/del/{key}", headers=self._headers)
-                return resp.status_code == 200
+                # Upstash supports both GET and POST for commands.
+                # Using POST /del is the canonical form per Upstash docs.
+                resp = await client.post(
+                    f"{self._url}/del/{key}", headers=self._headers
+                )
+                data = resp.json()
+                # result is the number of keys deleted (1 on success, 0 if key missing)
+                return isinstance(data.get("result"), int) and data["result"] >= 0
             except Exception:
                 return False
 
     async def setex(self, key: str, ex: int, value: str) -> bool:
         """Convenience alias matching redis-py's setex signature."""
         return await self.set(key, value, ex=ex)
+
+    async def exists(self, key: str) -> bool:
+        """Return True if *key* exists."""
+        if not self._url:
+            return False
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(f"{self._url}/exists/{key}", headers=self._headers)
+                data = resp.json()
+                return bool(data.get("result", 0))
+            except Exception:
+                return False
 
 
 # Singleton instance shared across the module

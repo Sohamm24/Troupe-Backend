@@ -22,16 +22,6 @@ from modules.organizers.models import OrganizerProfile
 
 def get_chat_between(db: Session, user_a_id: str, user_b_id: str) -> Optional[Chat]:
     """Find an existing chat shared by both users."""
-    uc_a = (
-        db.query(UserChat)
-        .filter(UserChat.user_id == user_a_id)
-        .subquery()
-    )
-    uc_b = (
-        db.query(UserChat.chat_id)
-        .filter(UserChat.user_id == user_b_id)
-        .subquery()
-    )
     row = (
         db.query(UserChat)
         .filter(
@@ -124,10 +114,14 @@ def get_user_chats(db: Session, user_id: str) -> List[UserChat]:
 # ── Messages ─────────────────────────────────────────────────────────────────
 
 def get_last_n_messages(db: Session, chat_id: str, n: int = 50) -> List[Message]:
-    """Return the last *n* messages in *chat_id*, oldest-first."""
+    """Return the last *n* messages in *chat_id*, oldest-first.
+
+    Note: Soft-deleted messages ARE included (is_deleted=True) so that reply
+    context ("Message deleted") can be displayed correctly in the UI.
+    """
     rows = (
         db.query(Message)
-        .filter(Message.chat_id == chat_id, Message.is_deleted == False)
+        .filter(Message.chat_id == chat_id)
         .options(joinedload(Message.reply_to_message))
         .order_by(Message.message_id.desc())
         .limit(n)
@@ -140,18 +134,30 @@ def get_last_n_messages(db: Session, chat_id: str, n: int = 50) -> List[Message]
 def get_messages_after(
     db: Session, chat_id: str, after_message_id: int, limit: int = 50
 ) -> List[Message]:
-    """Return messages sent AFTER *after_message_id* (for race-condition catch-up)."""
+    """Return messages sent AFTER *after_message_id* (for race-condition catch-up).
+
+    Includes soft-deleted messages for consistency with get_last_n_messages.
+    """
     return (
         db.query(Message)
         .filter(
             Message.chat_id == chat_id,
             Message.message_id > after_message_id,
-            Message.is_deleted == False,
         )
         .options(joinedload(Message.reply_to_message))
         .order_by(Message.message_id.asc())
         .limit(limit)
         .all()
+    )
+
+
+def get_message_by_id(db: Session, message_id: int) -> Optional[Message]:
+    """Return a single Message by its primary key, or None."""
+    return (
+        db.query(Message)
+        .filter(Message.message_id == message_id)
+        .options(joinedload(Message.reply_to_message))
+        .first()
     )
 
 
@@ -178,6 +184,83 @@ def create_message(
     return msg
 
 
+def soft_delete_message(
+    db: Session, message_id: int, requesting_user_id: str
+) -> Optional[Message]:
+    """Soft-delete a message. Only the original sender may delete their own message.
+
+    Returns the updated Message on success, or None if not found / not authorised.
+    """
+    msg = db.query(Message).filter(Message.message_id == message_id).first()
+    if not msg:
+        return None
+    if str(msg.sender_id) != str(requesting_user_id):
+        return None  # not the sender — reject silently
+    msg.is_deleted = True
+    msg.text = ""   # wipe content for privacy
+    db.flush()
+    return msg
+
+
+def edit_message(
+    db: Session, message_id: int, requesting_user_id: str, new_text: str
+) -> Optional[Message]:
+    """Edit a message's text. Only the original sender may edit.
+
+    Returns the updated Message on success, or None if not found / not authorised.
+    """
+    msg = db.query(Message).filter(Message.message_id == message_id).first()
+    if not msg:
+        return None
+    if str(msg.sender_id) != str(requesting_user_id):
+        return None
+    if msg.is_deleted:
+        return None  # cannot edit a deleted message
+    msg.text = new_text.strip()
+    msg.is_edited = True
+    db.flush()
+    return msg
+
+
+def mark_messages_read(
+    db: Session, chat_id: str, reader_user_id: str
+) -> List[int]:
+    """Mark all unread incoming messages as READ for the reader.
+
+    Only updates messages sent by someone else (not the reader) that are not
+    already READ. Returns the list of message_ids that were updated so the
+    service layer can notify the original senders.
+    """
+    messages = (
+        db.query(Message)
+        .filter(
+            Message.chat_id == chat_id,
+            Message.sender_id != reader_user_id,
+            Message.status != MessageStatus.READ,
+            Message.is_deleted == False,
+        )
+        .all()
+    )
+    updated_ids: List[int] = []
+    for msg in messages:
+        msg.status = MessageStatus.READ
+        updated_ids.append(msg.message_id)
+    if updated_ids:
+        db.flush()
+    return updated_ids
+
+
+def update_message_status(
+    db: Session, message_id: int, new_status: MessageStatus
+) -> Optional[Message]:
+    """Update the delivery status of a single message."""
+    msg = db.query(Message).filter(Message.message_id == message_id).first()
+    if msg:
+        msg.status = new_status
+        db.flush()
+    return msg
+
+
 # ── Read receipts ─────────────────────────────────────────────────────────────
 
 def mark_as_read(db: Session, user_chat_id: str, user_id: str) -> None:
@@ -194,7 +277,7 @@ def mark_as_read(db: Session, user_chat_id: str, user_id: str) -> None:
 
 
 def update_last_message(db: Session, chat_id: str, message_id: int) -> None:
-    """Update last_message_id + increment unread_count for the *other* participant."""
+    """Update last_message_id for all participants in the chat."""
     rows: List[UserChat] = (
         db.query(UserChat).filter(UserChat.chat_id == chat_id).all()
     )
@@ -217,6 +300,19 @@ def increment_unread_for_recipient(
     db.flush()
 
 
+def reset_unread_for_user(db: Session, chat_id: str, user_id: str) -> None:
+    """Reset unread_count to zero for *user_id* in *chat_id*."""
+    uc = (
+        db.query(UserChat)
+        .filter(UserChat.chat_id == chat_id, UserChat.user_id == user_id)
+        .first()
+    )
+    if uc:
+        uc.unread_count = 0
+        uc.last_read_timestamp = datetime.utcnow()
+        db.flush()
+
+
 def get_other_participant_user_chat(
     db: Session, chat_id: str, exclude_user_id: str
 ) -> Optional[UserChat]:
@@ -224,6 +320,17 @@ def get_other_participant_user_chat(
     return (
         db.query(UserChat)
         .filter(UserChat.chat_id == chat_id, UserChat.user_id != exclude_user_id)
+        .first()
+    )
+
+
+def get_user_chat_by_chat_and_user(
+    db: Session, chat_id: str, user_id: str
+) -> Optional[UserChat]:
+    """Return the UserChat for a specific user in a specific chat."""
+    return (
+        db.query(UserChat)
+        .filter(UserChat.chat_id == chat_id, UserChat.user_id == user_id)
         .first()
     )
 

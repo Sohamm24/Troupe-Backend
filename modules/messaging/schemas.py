@@ -94,6 +94,30 @@ class SendMessagePayload(BaseModel):
     reply_to_message_id: Optional[int] = None
 
 
+class DeleteMessagePayload(BaseModel):
+    """Client emits 'deleteMessage' to soft-delete one of their own messages."""
+    message_id: int
+
+
+class EditMessagePayload(BaseModel):
+    """Client emits 'editMessage' to update the text of their own message."""
+    message_id: int
+    new_text: str
+
+
+class MarkReadPayload(BaseModel):
+    """Client emits 'markRead' when the conversation comes into focus.
+
+    The server marks all unread incoming messages as READ and notifies the sender.
+    """
+    chat_id: str
+
+
+class PresenceQueryPayload(BaseModel):
+    """Client emits 'presenceQuery' to check if another user is online."""
+    target_user_id: str
+
+
 # ── WebSocket: outbound event envelopes ──────────────────────────────────────
 
 class WsEvent(BaseModel):

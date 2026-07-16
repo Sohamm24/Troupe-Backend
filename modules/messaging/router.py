@@ -8,6 +8,26 @@ Endpoints:
   POST /fcm-token        — register FCM device token
   POST /qstash-webhook   — QStash async event callback (signature verified)
   WS   /ws               — WebSocket connection (auth via ?token= query param)
+
+WebSocket events (client → server):
+  joinUserChat    { organizer_user_id, last_received_sequence }
+  sendMessage     { text, reply_to_message_id? }
+  deleteMessage   { message_id }
+  editMessage     { message_id, new_text }
+  markRead        { chat_id }
+  presenceQuery   { target_user_id }
+  heartbeat       {}
+
+WebSocket events (server → client):
+  connected             { user_id }
+  userChatJoined        { user_chat_id, chat_id, messages, participant }
+  newMessage            { message }
+  messageDeleted        { message_id, chat_id }
+  messageEdited         { message }
+  messageStatusUpdate   { chat_id, message_ids, status }
+  presenceResult        { user_id, is_online }
+  heartbeat_ack         {}
+  error                 { error }
 """
 
 from __future__ import annotations
@@ -25,8 +45,12 @@ from core.dependencies import get_current_user
 from core.security import decode_token
 from modules.messaging.connection_manager import manager
 from modules.messaging.schemas import (
+    DeleteMessagePayload,
+    EditMessagePayload,
     GetUserChatsResponse,
     JoinUserChatPayload,
+    MarkReadPayload,
+    PresenceQueryPayload,
     RegisterFCMTokenRequest,
     SendMessagePayload,
 )
@@ -66,12 +90,7 @@ async def register_fcm_token(
 # ── REST: QStash webhook ─────────────────────────────────────────────────────
 
 def _verify_qstash_signature(request_body: bytes, signature: str) -> bool:
-    """Verify that the webhook is genuinely from QStash using HMAC-SHA256.
-
-    QStash signs the raw request body with the signing key and sends it as
-    the 'upstash-signature' header (JWT format). We verify against both
-    current and next signing key to allow key rotation.
-    """
+    """Verify that the webhook is genuinely from QStash using HMAC-SHA256."""
     import base64
     import hashlib as _hashlib
     import hmac as _hmac
@@ -80,11 +99,9 @@ def _verify_qstash_signature(request_body: bytes, signature: str) -> bool:
         if not key:
             continue
         try:
-            # QStash uses a JWT; the signature part is base64url-encoded HMAC-SHA256
             parts = signature.split(".")
             if len(parts) == 3:
                 header_payload = f"{parts[0]}.{parts[1]}".encode()
-                # Pad base64url string
                 padding = "=" * (4 - len(parts[2]) % 4)
                 expected_sig = base64.urlsafe_b64decode(parts[2] + padding)
                 computed = _hmac.new(
@@ -106,7 +123,6 @@ async def qstash_webhook(
     body = await request.body()
     signature = request.headers.get("upstash-signature", "")
 
-    # In production, enforce signature verification
     if settings.QSTASH_CURRENT_SIGNING_KEY:
         if not _verify_qstash_signature(body, signature):
             raise HTTPException(status_code=403, detail="Invalid QStash signature")
@@ -128,13 +144,7 @@ async def websocket_endpoint(
     token: str = Query(...),
     db: Session = Depends(get_db),
 ):
-    """WebSocket connection authenticated via ?token=<JWT> query param.
-
-    Event loop:
-      Client → joinUserChat   { organizer_user_id, last_received_sequence }
-      Client → sendMessage    { text, reply_to_message_id? }
-      Client → heartbeat      {}
-    """
+    """WebSocket connection authenticated via ?token=<JWT> query param."""
     # ── 1. Authenticate ────────────────────────────────────────────────────
     payload = decode_token(token)
     if not payload:
@@ -152,12 +162,15 @@ async def websocket_endpoint(
     await service.set_online(user_id)
     await websocket.send_json({"event": "connected", "data": {"user_id": user_id}})
 
-    # Track the current chat_id so sendMessage can reference it
+    # Track the current chat_id — set once joinUserChat is handled
     current_chat_id: Optional[str] = None
 
     try:
         while True:
-            raw = await websocket.receive_text()
+            try:
+                raw = await websocket.receive_text()
+            except Exception:
+                break  # Connection closed
 
             try:
                 msg = json.loads(raw)
@@ -176,19 +189,14 @@ async def websocket_endpoint(
                     await websocket.send_json({"event": "error", "data": {"error": str(e)}})
                     continue
 
-                await service.handle_join(websocket, user_id, join_payload, db)
-
-                # Store current chat_id for subsequent sendMessage calls
-                # We derive it from what handle_join creates/fetches
-                from modules.messaging import repository as repo
-                from modules.users.models import User as UserModel
-                user_a_q = db.query(UserModel).filter(UserModel.user_id == user_id).first()
-                if user_a_q:
-                    chat, uc_a, _ = repo.get_or_create_chat(
-                        db, user_id, join_payload.organizer_user_id
+                try:
+                    # handle_join returns chat_id — no redundant second DB call
+                    current_chat_id = await service.handle_join(
+                        websocket, user_id, join_payload, db
                     )
-                    # Don't commit again — get_or_create is idempotent
-                    current_chat_id = str(chat.chat_id)
+                except Exception as exc:
+                    logger.error(f"joinUserChat handler error: {exc}")
+                    # Error response already sent inside handle_join
 
             # ── sendMessage ──────────────────────────────────────────────
             elif event_type == "sendMessage":
@@ -205,14 +213,90 @@ async def websocket_endpoint(
                     await websocket.send_json({"event": "error", "data": {"error": str(e)}})
                     continue
 
-                await service.handle_send_message(
-                    websocket, user_id, current_chat_id, send_payload, db
-                )
+                try:
+                    await service.handle_send_message(
+                        websocket, user_id, current_chat_id, send_payload, db
+                    )
+                except Exception as exc:
+                    logger.error(f"sendMessage handler error: {exc}")
+
+            # ── deleteMessage ─────────────────────────────────────────────
+            elif event_type == "deleteMessage":
+                if not current_chat_id:
+                    await websocket.send_json({
+                        "event": "error",
+                        "data": {"error": "Must join a chat first"},
+                    })
+                    continue
+
+                try:
+                    del_payload = DeleteMessagePayload(**data)
+                except Exception as e:
+                    await websocket.send_json({"event": "error", "data": {"error": str(e)}})
+                    continue
+
+                try:
+                    await service.handle_delete_message(
+                        websocket, user_id, current_chat_id, del_payload, db
+                    )
+                except Exception as exc:
+                    logger.error(f"deleteMessage handler error: {exc}")
+
+            # ── editMessage ───────────────────────────────────────────────
+            elif event_type == "editMessage":
+                if not current_chat_id:
+                    await websocket.send_json({
+                        "event": "error",
+                        "data": {"error": "Must join a chat first"},
+                    })
+                    continue
+
+                try:
+                    edit_payload = EditMessagePayload(**data)
+                except Exception as e:
+                    await websocket.send_json({"event": "error", "data": {"error": str(e)}})
+                    continue
+
+                try:
+                    await service.handle_edit_message(
+                        websocket, user_id, current_chat_id, edit_payload, db
+                    )
+                except Exception as exc:
+                    logger.error(f"editMessage handler error: {exc}")
+
+            # ── markRead ──────────────────────────────────────────────────
+            elif event_type == "markRead":
+                try:
+                    mark_payload = MarkReadPayload(**data)
+                except Exception as e:
+                    await websocket.send_json({"event": "error", "data": {"error": str(e)}})
+                    continue
+
+                try:
+                    await service.handle_mark_read(websocket, user_id, mark_payload, db)
+                except Exception as exc:
+                    logger.error(f"markRead handler error: {exc}")
+
+            # ── presenceQuery ─────────────────────────────────────────────
+            elif event_type == "presenceQuery":
+                try:
+                    presence_payload = PresenceQueryPayload(**data)
+                except Exception as e:
+                    await websocket.send_json({"event": "error", "data": {"error": str(e)}})
+                    continue
+
+                try:
+                    await service.handle_presence_query(websocket, user_id, presence_payload)
+                except Exception as exc:
+                    logger.error(f"presenceQuery handler error: {exc}")
 
             # ── heartbeat ────────────────────────────────────────────────
             elif event_type == "heartbeat":
-                await service.renew_presence(user_id)
-                await websocket.send_json({"event": "heartbeat_ack", "data": {}})
+                try:
+                    await service.renew_presence(user_id)
+                    await websocket.send_json({"event": "heartbeat_ack", "data": {}})
+                except Exception as exc:
+                    logger.warning(f"heartbeat error: {exc}")
 
             else:
                 await websocket.send_json({
